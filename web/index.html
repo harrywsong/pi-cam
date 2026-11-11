@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-cam</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="login-screen" class="screen">
+    <form id="login-form">
+      <h1>pi-cam</h1>
+      <p class="hint">Credentials are the same ones you were given for the
+        MediaMTX stream. They stay in this browser tab only.</p>
+      <label>Username <input id="login-user" autocomplete="username" required></label>
+      <label>Password <input id="login-pass" type="password" autocomplete="current-password" required></label>
+      <label>MediaMTX host <small>(e.g. 100.x.x.x:8889)</small>
+        <input id="login-host" placeholder="pi-tailscale-ip:8889" required></label>
+      <button type="submit">Connect</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </div>
+
+  <div id="view-screen" class="screen" hidden>
+    <div id="stage">
+      <video id="player" autoplay playsinline></video>
+    </div>
+    <div id="controls">
+      <button id="zoom-out" title="Zoom out">−</button>
+      <button id="zoom-reset" title="Reset view">⤾</button>
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="mute" title="Mute/unmute audio">🔊</button>
+      <button id="disconnect" title="Disconnect">✕</button>
+    </div>
+    <p id="view-status" class="hint"></p>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

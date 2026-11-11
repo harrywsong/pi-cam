@@ -12,6 +12,7 @@ set -euo pipefail
 TAILSCALE_SUBNET="100.64.0.0/10"
 WEBRTC_PORT=8889
 HLS_PORT=8888
+WEB_UI_PORT=8080
 # MediaMTX WebRTC also needs a UDP range for ICE/media; adjust to match
 # your mediamtx.yml webrtcICEUDPMuxAddress / port range if you set one.
 WEBRTC_ICE_UDP_RANGE="8189:8189"
@@ -23,11 +24,11 @@ nft flush table inet picam
 nft add chain inet picam input '{ type filter hook input priority 0; policy accept; }'
 
 # Allow from tailnet subnet
-nft add rule inet picam input ip saddr "$TAILSCALE_SUBNET" tcp dport "{ $WEBRTC_PORT, $HLS_PORT }" accept
+nft add rule inet picam input ip saddr "$TAILSCALE_SUBNET" tcp dport "{ $WEBRTC_PORT, $HLS_PORT, $WEB_UI_PORT }" accept
 nft add rule inet picam input ip saddr "$TAILSCALE_SUBNET" udp dport "$WEBRTC_ICE_UDP_RANGE" accept
 
 # Drop everything else hitting those ports, regardless of source
-nft add rule inet picam input tcp dport "{ $WEBRTC_PORT, $HLS_PORT }" drop
+nft add rule inet picam input tcp dport "{ $WEBRTC_PORT, $HLS_PORT, $WEB_UI_PORT }" drop
 nft add rule inet picam input udp dport "$WEBRTC_ICE_UDP_RANGE" drop
 
 echo "Done. Verify with: sudo nft list table inet picam"

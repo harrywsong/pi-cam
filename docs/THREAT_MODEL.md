@@ -16,6 +16,25 @@
   Tailscale is WireGuard-encrypted end-to-end, so someone else on your home
   Wi-Fi (or a coffee-shop Wi-Fi a viewer is on) can't sniff the video.
 
+## New surface from audio + the custom viewer
+
+- **Always-on microphone.** The stream now carries audio from the Pi's mic
+  continuously, not just video. Anyone with valid credentials (the two
+  authorized people) can listen in on the room at any time, same as they
+  already could watch it. If that's ever unwanted, mute by stopping
+  `picam-ffmpeg`'s audio input (drop the `-f alsa -i ...` lines) or unplug
+  the mic.
+- **`picam-web` (port 8080) is another listening service.** It's a plain
+  static file server with no auth of its own — but it only serves
+  `index.html`/`app.js`/`style.css`, has no backend logic, and is
+  firewalled to the tailnet exactly like the MediaMTX ports (see
+  `scripts/firewall.sh`). The actual credential check still happens at
+  MediaMTX when the page calls the WHEP endpoint. A stranger who somehow
+  reached port 8080 anyway would get the empty login page, not the feed.
+- **Digital pan/zoom is purely client-side.** It only crops the decoded
+  video in the viewer's own browser; it doesn't change what's captured or
+  sent, and one viewer's pan/zoom never affects another's.
+
 ## Out of scope / residual risk — be aware of these
 
 - **A compromised viewer device.** If one of the two people's phones/laptops

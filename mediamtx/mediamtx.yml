@@ -29,6 +29,11 @@ webrtc: yes          # best latency, used by the MediaMTX WebRTC web player
 api: no              # leave off unless you need the HTTP control API
 metrics: no
 
+# The custom viewer page (web/) is served from a different port
+# (picam-web.service) and calls the WHEP endpoint here via browser fetch,
+# so it needs cross-origin access. Still tailnet-only — see scripts/firewall.sh.
+webrtcAllowOrigin: '*'
+
 # --- Authentication --------------------------------------------------------
 authMethod: internal
 

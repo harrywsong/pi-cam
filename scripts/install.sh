@@ -22,10 +22,10 @@ esac
 
 echo "==> Installing ffmpeg"
 apt-get update
-apt-get install -y ffmpeg nftables
+apt-get install -y ffmpeg nftables python3 alsa-utils
 
 echo "==> Creating picam system user"
-id -u picam &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -G video picam
+id -u picam &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -G video,audio picam
 
 echo "==> Downloading MediaMTX ${MEDIAMTX_VERSION} (${MEDIAMTX_ARCH})"
 TMPDIR="$(mktemp -d)"
@@ -46,16 +46,23 @@ fi
 chown -R picam:picam /etc/picam
 chmod 750 /etc/picam
 
+echo "==> Laying out web viewer /etc/picam/web"
+mkdir -p /etc/picam/web
+cp "$(dirname "$0")/../web/"*.html "$(dirname "$0")/../web/"*.js "$(dirname "$0")/../web/"*.css /etc/picam/web/
+chown -R picam:picam /etc/picam/web
+
 echo "==> Installing systemd units"
 cp "$(dirname "$0")/../systemd/mediamtx.service" /etc/systemd/system/mediamtx.service
 cp "$(dirname "$0")/../systemd/picam-ffmpeg.service" /etc/systemd/system/picam-ffmpeg.service
+cp "$(dirname "$0")/../systemd/picam-web.service" /etc/systemd/system/picam-web.service
 systemctl daemon-reload
 
 echo ""
 echo "Install complete. Remaining manual steps (see docs/SETUP.md):"
 echo "  1. Generate password hashes and fill in /etc/picam/mediamtx.yml"
-echo "  2. Create /etc/picam/ffmpeg.env with PICAM_PUBLISHER_PASS=<publisher password>"
+echo "  2. Create /etc/picam/ffmpeg.env with PICAM_PUBLISHER_PASS and PICAM_AUDIO_DEVICE"
 echo "  3. chmod 600 /etc/picam/ffmpeg.env && chown picam:picam /etc/picam/ffmpeg.env"
-echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices)"
+echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find your"
+echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
 echo "  5. Run scripts/firewall.sh"
-echo "  6. systemctl enable --now mediamtx picam-ffmpeg"
+echo "  6. systemctl enable --now mediamtx picam-ffmpeg picam-web"

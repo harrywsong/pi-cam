@@ -1,0 +1,23 @@
+[Unit]
+Description=pi-cam static web viewer (pan/zoom UI, talks to MediaMTX directly)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Plain static file server — all auth happens browser-side against MediaMTX's
+# WHEP endpoint, this just serves index.html/app.js/style.css. Firewalled to
+# the tailnet the same as the MediaMTX ports (see scripts/firewall.sh).
+WorkingDirectory=/etc/picam/web
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 0.0.0.0
+Restart=always
+RestartSec=3
+User=picam
+Group=picam
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

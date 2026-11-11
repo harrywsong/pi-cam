@@ -86,6 +86,21 @@ sudo cp systemd/picam-ffmpeg.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
+## 3b. Pick your microphone
+
+The C920 (and most webcams) has a built-in mic, which is what `PICAM_AUDIO_DEVICE`
+should normally point at. Find its ALSA device name:
+
+```bash
+arecord -l
+```
+
+Look for the webcam in the list (e.g. `card 2: C920 [HD Pro Webcam C920]`) and
+use `plughw:CARD=C920,DEV=0` (substitute the actual card name) as
+`PICAM_AUDIO_DEVICE` in `/etc/picam/ffmpeg.env` — see step 4. This is
+listen-in audio only (Pi mic → viewers); there's no speaker on the Pi, so
+there's no talk-back path.
+
 ## 4. Generate credentials (one per person)
 
 MediaMTX's `internal` auth method accepts a sha256 hash of the password.
@@ -107,6 +122,7 @@ Then create the ffmpeg publisher's env file:
 ```bash
 sudo tee /etc/picam/ffmpeg.env > /dev/null <<'EOF'
 PICAM_PUBLISHER_PASS=the-publisher-password-you-hashed-above
+PICAM_AUDIO_DEVICE=plughw:CARD=C920,DEV=0
 EOF
 sudo chmod 600 /etc/picam/ffmpeg.env
 sudo chown picam:picam /etc/picam/ffmpeg.env /etc/picam/mediamtx.yml
@@ -129,28 +145,36 @@ your phone with Tailscale off, or mobile data) — it should simply time out.
 ```bash
 sudo systemctl enable --now mediamtx
 sudo systemctl enable --now picam-ffmpeg
-sudo systemctl status mediamtx picam-ffmpeg
+sudo systemctl enable --now picam-web
+sudo systemctl status mediamtx picam-ffmpeg picam-web
 ```
 
-Check logs if something's wrong: `journalctl -u mediamtx -f` and
-`journalctl -u picam-ffmpeg -f`.
+Check logs if something's wrong: `journalctl -u mediamtx -f`,
+`journalctl -u picam-ffmpeg -f`, `journalctl -u picam-web -f`.
 
 ## 7. View the feed
 
 Find the Pi's Tailscale IP: `tailscale ip -4` (run on the Pi), or look it up
 in the admin console. From a device on the tailnet:
 
-- **WebRTC (best, lowest latency):**
-  `http://<pi-tailscale-ip>:8889/home` — opens MediaMTX's built-in WHEP web
-  player; enter the `person1`/`person2` credentials when prompted.
+- **Custom viewer (recommended):** `http://<pi-tailscale-ip>:8080` — the
+  page in `web/`. Enter your `person1`/`person2` username/password and the
+  MediaMTX host (`<pi-tailscale-ip>:8889`) once; it's kept in that browser
+  tab's `sessionStorage` only. Gives you audio (listen-in from the Pi's mic)
+  and a digital pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom,
+  ⤾ to reset) — this crops into the fixed camera frame in software, it
+  doesn't move the camera, since the C920 has no motorized PTZ.
+- **WebRTC (MediaMTX's own page):**
+  `http://<pi-tailscale-ip>:8889/home` — built-in WHEP web player, basic-auth
+  prompt for credentials. No pan/zoom controls.
 - **HLS (fallback, works everywhere incl. older Safari/iOS):**
   `http://<pi-tailscale-ip>:8888/home/index.m3u8` with the same credentials
   via basic auth, or open `http://<pi-tailscale-ip>:8888/home` for the
   built-in HLS player page.
 
-Bookmark it on each person's device. Since it's only reachable over
-Tailscale, make sure Tailscale is running on the viewing device before the
-link will load.
+Bookmark the custom viewer on each person's device. Since it's only
+reachable over Tailscale, make sure Tailscale is running on the viewing
+device before the link will load.
 
 ## Optional: self-hosted control plane (Headscale)
 
