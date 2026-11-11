@@ -516,13 +516,21 @@ async function ensureMicGraph() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(micStream);
   gainNode = audioCtx.createGain();
-  gainNode.gain.value = Number(inputVolumeSlider.value) / 100;
+  gainNode.gain.value = talkGain();
   micDest = audioCtx.createMediaStreamDestination();
   source.connect(gainNode).connect(micDest);
 }
 
+// Full mic gain was far too loud through the Bose, so the slider (see
+// index.html) defaults to 25 (= 0.25x) and tops out at 50 (= 0.5x). Clamp
+// here too, in case a browser has an old cached index.html with max=100.
+const MAX_TALK_GAIN = 0.5;
+function talkGain() {
+  return Math.min(MAX_TALK_GAIN, Number(inputVolumeSlider.value) / 100);
+}
+
 inputVolumeSlider.addEventListener("input", () => {
-  if (gainNode) gainNode.gain.value = Number(inputVolumeSlider.value) / 100;
+  if (gainNode) gainNode.gain.value = talkGain();
 });
 
 async function fetchAuthToken() {
