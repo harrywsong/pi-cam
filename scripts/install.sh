@@ -48,6 +48,12 @@ cp "$(dirname "$0")/mediamtx-on-demand.sh" /etc/picam/mediamtx-on-demand.sh
 cp "$(dirname "$0")/mediamtx-on-undemand.sh" /etc/picam/mediamtx-on-undemand.sh
 chmod 750 /etc/picam/mediamtx-on-demand.sh /etc/picam/mediamtx-on-undemand.sh
 
+if [[ ! -f /etc/picam/tone-secret ]]; then
+  echo "==> Generating /etc/picam/tone-secret (internal-only, not a login credential)"
+  head -c 32 /dev/urandom | base64 | tr -d '\n' > /etc/picam/tone-secret
+  chmod 640 /etc/picam/tone-secret
+fi
+
 chown -R picam:picam /etc/picam
 chmod 750 /etc/picam
 

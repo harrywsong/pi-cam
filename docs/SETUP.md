@@ -14,9 +14,15 @@ gating access is the username/password each person has.
 - Confirm the webcam shows up: `v4l2-ctl --list-devices` and
   `v4l2-ctl --device=/dev/video0 --list-formats-ext` (install `v4l-utils` if
   missing: `sudo apt install v4l-utils`). Note the device path (usually
-  `/dev/video0`) and a supported resolution/framerate — adjust the
-  `runOnDemand` command in `mediamtx/mediamtx.yml` if yours differs from
-  1920x1080@30 MJPEG.
+  `/dev/video0`) and a supported resolution/framerate — adjust the capture
+  command in `scripts/mediamtx-on-demand.sh` if yours differs from
+  1920x1080@15 MJPEG. **Don't trust the "supported" framerate list as the
+  real sustained rate** — `--list-formats-ext` just shows what the driver
+  accepts, not what the camera actually delivers. Verify with
+  `v4l2-ctl --device=/dev/video0 --stream-mmap --stream-count=90 --stream-to=/dev/null`
+  and watch the reported fps; this repo ships at 15fps because that's what
+  the C920 actually sustains here (see `docs/THREAT_MODEL.md`), even though
+  30fps is "supported."
 
 ## 1. Install Tailscale on the Pi only
 
@@ -56,15 +62,17 @@ v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
 The webcam+mic capture itself isn't a separate always-running service —
-it's the `runOnDemand` command inside `mediamtx/mediamtx.yml`'s `paths.home`
-section, which MediaMTX starts the moment someone's actually watching and
-stops a minute after the last viewer leaves (see `docs/THREAT_MODEL.md` and
-the comments in that file for why). Edit that command if your device isn't
-MJPEG 1920x1080@30 (e.g. switch `-input_format mjpeg` to `-input_format
-yuyv422` if that's what it reports, and adjust resolution/framerate — drop
-`-b:v`/`-maxrate`/`-bufsize` proportionally for a lower resolution). Editing
-`mediamtx.yml` doesn't need a restart — MediaMTX picks up path config
-changes automatically.
+`mediamtx/mediamtx.yml`'s `paths.home` points `runOnDemand` at
+`scripts/mediamtx-on-demand.sh`, which MediaMTX runs the moment someone's
+actually watching and stops a minute after the last viewer leaves (see
+`docs/THREAT_MODEL.md` and the comments in that file for why). Edit that
+script's ffmpeg command if your device isn't MJPEG 1920x1080@15 (e.g.
+switch `-input_format mjpeg` to `-input_format yuyv422` if that's what it
+reports, and adjust resolution/framerate to whatever you measured with
+`--stream-mmap` above — drop `-b:v`/`-maxrate`/`-bufsize` proportionally
+for a lower resolution). It's a plain file on disk — editing it takes
+effect the next time MediaMTX starts it (i.e. the next viewer session), no
+restart of anything needed.
 
 ## 3b. Pick your microphone
 

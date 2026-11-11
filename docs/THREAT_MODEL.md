@@ -29,14 +29,28 @@ The webcam and mic only run while at least one viewer is actually
 connected — MediaMTX's own `runOnDemand`/`runOnDemandCloseAfter` (configured
 in `mediamtx.yml`'s `paths.home`) starts the capture command on the first
 reader and sends it SIGINT about a minute after the last one disconnects,
-rather than it running as an always-on systemd service. Besides the
-obvious privacy/wear benefit of a camera that isn't recording when nobody's
-watching, this also sidesteps a real issue found during testing: v4l2
-(video) and ALSA (audio) are two independent hardware clocks that drift
-against each other over a long session, eventually showing up as
-progressively duplicated frames and an ALSA buffer xrun — shorter,
-on-demand sessions simply don't run long enough to accumulate much of that
-drift (on top of the `-use_wallclock_as_timestamps` fix applied directly).
+rather than it running as an always-on systemd service. The obvious benefit
+is privacy/wear (a camera that isn't recording when nobody's watching).
+
+## Camera capture settings — a real-hardware finding
+
+The C920 is configured for 1920x1080 at **15fps**, not the 30fps it was
+originally set to and nominally reports supporting. Measured directly on
+this Pi with `v4l2-ctl --stream-mmap`, bypassing ffmpeg entirely: the
+camera only *actually* delivers ~15fps sustained, at both 1080p and 720p,
+regardless of the 30fps request the driver happily accepts. This is
+ordinary UVC webcam behavior — auto-exposure extends the shutter time in
+anything less than bright light, which effectively halves the real frame
+rate even though the nominal setting doesn't change. Requesting 30fps while
+only 15 arrive doesn't error, it just makes ffmpeg duplicate every other
+frame to pad up to the requested rate, which produced a steady,
+fixed-timing "More than N frames duplicated" warning and very likely
+contributed to the playback instability reported over the real (Funnel)
+path — never caught by testing that only exercised the capture over
+localhost. If your lighting is consistently bright enough for a true 30fps,
+you can try raising it back in `scripts/mediamtx-on-demand.sh`, but verify
+with `v4l2-ctl --stream-mmap` first rather than trusting the requested
+value.
 
 ## Out of scope / residual risk — be aware of these
 
@@ -81,15 +95,23 @@ drift (on top of the `-use_wallclock_as_timestamps` fix applied directly).
   (where before it was just a stock static-file server). It reuses the same
   credentials as MediaMTX (reads the sha256 hashes straight out of
   `mediamtx.yml` — one source of truth, not a second place for a password
-  to go stale), and `/talk-ws` requires a short-lived, single-use token
-  fetched over `/auth-token` rather than ever taking a real password in a
-  URL/websocket. `/play-tone` (the connect/disconnect chimes) is the one
-  endpoint with no auth at all — it's only ever called locally by
-  MediaMTX's own hook scripts (`scripts/mediamtx-on-demand.sh`/
-  `-on-undemand.sh`), can't be reached from outside the Pi (loopback-bound,
-  same as everything else here), and the worst it does is play a sound, so
-  that trade-off is deliberate, not an oversight. Keep `python3-aiohttp`
-  updated along with everything else.
+  to go stale), and `/talk-ws`/`/play-tone` both require a short-lived,
+  single-use token fetched over `/auth-token` rather than ever taking a
+  real password in a URL/websocket. `/play-tone` also accepts a local
+  shared secret (`/etc/picam/tone-secret`, generated at install time) via
+  an `X-Tone-Secret` header, since MediaMTX's hook scripts
+  (`scripts/mediamtx-on-demand.sh`/`-on-undemand.sh`) have no browser
+  session to get a viewer token from. **This binds to 127.0.0.1 like
+  everything else here, but that does not make it loopback-only** —
+  Tailscale Funnel's local reverse proxy also connects from 127.0.0.1, so
+  every route on this port is reachable from the public internet, Funnel
+  being the only thing standing in front of it; don't add a new route here
+  without auth just because it binds to a loopback address, that was
+  actually wrong once already (`/play-tone` initially shipped with no auth
+  at all, on the mistaken assumption loopback-bound meant unreachable
+  externally — fixed before anyone would have likely noticed, but worth
+  remembering for the next endpoint). Keep `python3-aiohttp` updated along
+  with everything else.
 - **Push-to-talk audio plays on a real speaker in the room, unauthenticated
   beyond the same credential check as everything else.** Anyone with valid
   credentials can speak into the room at will. This is the same trust

@@ -5,17 +5,23 @@ before push-to-talk existed. Serves the static viewer files and adds:
 
 - /talk-ws: decodes incoming mic audio (webm/opus from the browser's
   MediaRecorder) and plays it out through the Bose speaker.
-- /play-tone: plays a short connect/disconnect chime. Called locally (over
-  loopback, no auth — see below) by MediaMTX's runOnDemand/runOnUnDemand
-  hooks (scripts/mediamtx-on-demand.sh, scripts/mediamtx-on-undemand.sh)
-  when a viewer's session starts/ends. It's here and not in those scripts
-  directly because they run as mediamtx's own unprivileged `picam` user,
-  which (like mediamtx itself) can't reach the PipeWire session that owns
-  the speaker — this process can, for the same reason push-to-talk needs
-  to run as the interactive login user (see docs/THREAT_MODEL.md).
-  No token/auth: it only ever plays a sound, bound to 127.0.0.1 same as
-  everything else here, and the hook scripts that call it have no way to
-  carry a browser-issued token anyway.
+- /play-tone: plays a short connect/disconnect chime. Called by MediaMTX's
+  runOnDemand/runOnUnDemand hooks (scripts/mediamtx-on-demand.sh,
+  scripts/mediamtx-on-undemand.sh) when a viewer's session starts/ends, and
+  by the settings panel's manual test buttons. It's here and not in those
+  scripts directly because they run as mediamtx's own unprivileged `picam`
+  user, which (like mediamtx itself) can't reach the PipeWire session that
+  owns the speaker — this process can, for the same reason push-to-talk
+  needs to run as the interactive login user (see docs/THREAT_MODEL.md).
+  IMPORTANT: this binds to 127.0.0.1, but that does NOT make it
+  loopback-only in practice — Tailscale Funnel's local reverse proxy also
+  connects to this same port from 127.0.0.1, so from this process's point
+  of view a genuine local call and a proxied call from the public internet
+  are indistinguishable. It needs real auth: either a one-time viewer
+  token (same mechanism as /talk-ws) for the test buttons, or a local
+  shared secret (/etc/picam/tone-secret, generated at setup time) that the
+  hook scripts send in an X-Tone-Secret header, since they have no way to
+  carry a browser-issued token.
 
 (The webcam/mic capture itself runs on-demand — started/stopped by
 MediaMTX's own runOnDemand/runOnDemandCloseAfter, configured in
@@ -51,6 +57,7 @@ MEDIAMTX_CONF = "/etc/picam/mediamtx.yml"
 # systemd/picam-web.service for the PULSE_SERVER/XDG_RUNTIME_DIR env this
 # process needs (inherited by the ffmpeg subprocess below automatically).
 TOKEN_TTL_SECONDS = 30
+TONE_SECRET_FILE = "/etc/picam/tone-secret"
 
 # Two deliberately different-shaped chimes: connect rises and is quick/bright
 # (two short high notes), disconnect falls and is slower/lower (two longer
@@ -186,7 +193,31 @@ async def talk_ws(request):
     return ws
 
 
+def check_tone_auth(request):
+    """Either a valid one-time viewer token (the settings-panel test buttons)
+    or the local shared secret (MediaMTX's hook scripts) — this endpoint is
+    reachable over Tailscale Funnel same as everything else on this port,
+    it is NOT loopback-only despite running on 127.0.0.1, so it needs real
+    auth like /talk-ws does."""
+    token = request.query.get("token", "")
+    _prune_expired_tokens()
+    if token in _tokens:
+        _tokens.pop(token, None)  # one-time use
+        return True
+
+    secret_header = request.headers.get("X-Tone-Secret", "")
+    try:
+        with open(TONE_SECRET_FILE) as f:
+            real_secret = f.read().strip()
+    except OSError:
+        return False
+    return bool(real_secret) and secrets.compare_digest(secret_header, real_secret)
+
+
 async def play_tone(request):
+    if not check_tone_auth(request):
+        return web.Response(status=401)
+
     kind = request.query.get("type", "")
     if kind not in TONE_FILTERS:
         return web.Response(status=400, text="type must be connect or disconnect")
@@ -214,13 +245,17 @@ async def play_tone(request):
         "-f",
         "pulse",
         "default",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
-        await asyncio.wait_for(proc.wait(), timeout=5)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
     except asyncio.TimeoutError:
         proc.kill()
+        return web.Response(status=504, text="tone playback timed out")
+
+    if proc.returncode != 0:
+        return web.Response(status=500, text=f"ffmpeg exited {proc.returncode}: {stderr.decode(errors='replace')[:500]}")
     return web.Response(text="ok")
 
 

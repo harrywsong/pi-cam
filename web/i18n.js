@@ -35,6 +35,12 @@ const TRANSLATIONS = {
     pttTitle: "Push to talk",
     micError: "Couldn't access microphone",
     talkError: "Couldn't start talk — reload and try again",
+    toneTestLabel: "Test speaker chimes",
+    testConnectTitle: "Play connect chime",
+    testDisconnectTitle: "Play disconnect chime",
+    tonePlaying: "Playing…",
+    toneOk: "Played",
+    toneError: "Failed — no speaker set up, or wrong credentials",
   },
   ko: {
     brandName: "pi-cam",
@@ -69,6 +75,12 @@ const TRANSLATIONS = {
     pttTitle: "눌러서 말하기",
     micError: "마이크에 접근할 수 없습니다",
     talkError: "통화를 시작할 수 없습니다 — 새로고침 후 다시 시도하세요",
+    toneTestLabel: "스피커 알림음 테스트",
+    testConnectTitle: "연결음 재생",
+    testDisconnectTitle: "종료음 재생",
+    tonePlaying: "재생 중…",
+    toneOk: "재생됨",
+    toneError: "실패 — 스피커가 없거나 인증 정보가 올바르지 않습니다",
   },
 };
 

@@ -557,3 +557,22 @@ pttBtn.addEventListener("pointerdown", (e) => {
 ["pointerup", "pointerleave", "pointercancel"].forEach((evt) =>
   pttBtn.addEventListener(evt, stopTalking)
 );
+
+// --- Manual chime test buttons (settings panel) ---
+
+const toneTestStatus = document.getElementById("tone-test-status");
+
+async function testTone(kind) {
+  toneTestStatus.textContent = t("tonePlaying");
+  try {
+    const token = await fetchAuthToken();
+    const resp = await fetch(`/play-tone?type=${kind}&token=${token}`, { method: "POST" });
+    toneTestStatus.textContent = resp.ok ? t("toneOk") : t("toneError");
+  } catch (err) {
+    console.error("tone test failed", err);
+    toneTestStatus.textContent = t("toneError");
+  }
+}
+
+document.getElementById("test-connect-tone").addEventListener("click", () => testTone("connect"));
+document.getElementById("test-disconnect-tone").addEventListener("click", () => testTone("disconnect"));

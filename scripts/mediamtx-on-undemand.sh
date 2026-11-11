@@ -5,4 +5,6 @@
 # is actually stopped. Just plays a "nobody's watching anymore" chime; see
 # scripts/mediamtx-on-demand.sh for why this goes through web/server.py's
 # /play-tone instead of calling ffmpeg directly.
-curl -s -m 2 -X POST "http://127.0.0.1:8080/play-tone?type=disconnect" >/dev/null 2>&1 || true
+TONE_SECRET="$(cat /etc/picam/tone-secret 2>/dev/null || true)"
+curl -s -m 2 -X POST -H "X-Tone-Secret: $TONE_SECRET" \
+  "http://127.0.0.1:8080/play-tone?type=disconnect" >/dev/null 2>&1 || true
