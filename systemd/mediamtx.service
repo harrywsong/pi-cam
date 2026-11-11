@@ -4,11 +4,18 @@ After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
+# EnvironmentFile holds PICAM_AUDIO_DEVICE/PICAM_PUBLISHER_PASS, which the
+# webcam+mic capture command (run on-demand by mediamtx.yml's
+# runOnDemand/runOnDemandCloseAfter — see paths.home — not by a separate
+# always-on systemd unit) needs. SupplementaryGroups=audio so that spawned
+# command can open the mic alongside the existing video group for the cam.
+EnvironmentFile=/etc/picam/ffmpeg.env
 ExecStart=/usr/local/bin/mediamtx /etc/picam/mediamtx.yml
 Restart=always
 RestartSec=3
 User=picam
 Group=video
+SupplementaryGroups=audio
 
 NoNewPrivileges=yes
 ProtectSystem=strict

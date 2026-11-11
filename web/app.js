@@ -487,7 +487,7 @@ inputVolumeSlider.addEventListener("input", () => {
   if (gainNode) gainNode.gain.value = Number(inputVolumeSlider.value) / 100;
 });
 
-async function fetchTalkToken() {
+async function fetchAuthToken() {
   const headers = {};
   if (storedCreds) {
     headers.Authorization = "Basic " + btoa(`${storedCreds.user}:${storedCreds.pass}`);
@@ -495,8 +495,8 @@ async function fetchTalkToken() {
   // No stored creds (native Safari path): the browser will show its own
   // native Basic Auth prompt here the first time, same as it already does
   // for the video stream itself.
-  const resp = await fetch("/talk-token", { headers });
-  if (!resp.ok) throw new Error(`talk-token: ${resp.status}`);
+  const resp = await fetch("/auth-token", { headers });
+  if (!resp.ok) throw new Error(`auth-token: ${resp.status}`);
   const data = await resp.json();
   return data.token;
 }
@@ -504,7 +504,7 @@ async function fetchTalkToken() {
 async function startTalking() {
   try {
     await ensureMicGraph();
-    const token = await fetchTalkToken();
+    const token = await fetchAuthToken();
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     talkSocket = new WebSocket(`${proto}//${location.host}/talk-ws?token=${token}`);
     talkSocket.binaryType = "arraybuffer";
@@ -513,7 +513,7 @@ async function startTalking() {
       talkSocket.addEventListener("open", resolve, { once: true });
       talkSocket.addEventListener(
         "error",
-        () => reject(new Error("talk-token socket error")),
+        () => reject(new Error("auth-token socket error")),
         { once: true }
       );
     });
@@ -530,7 +530,7 @@ async function startTalking() {
     talkBadge.hidden = false;
   } catch (err) {
     console.error("push-to-talk failed to start", err);
-    statusEl.textContent = t(err && err.message && err.message.includes("talk-token") ? "talkError" : "micError");
+    statusEl.textContent = t(err && err.message && err.message.includes("auth-token") ? "talkError" : "micError");
     stopTalking();
   }
 }

@@ -14,8 +14,9 @@ gating access is the username/password each person has.
 - Confirm the webcam shows up: `v4l2-ctl --list-devices` and
   `v4l2-ctl --device=/dev/video0 --list-formats-ext` (install `v4l-utils` if
   missing: `sudo apt install v4l-utils`). Note the device path (usually
-  `/dev/video0`) and a supported resolution/framerate — adjust
-  `systemd/picam-ffmpeg.service` if yours differs from 1920x1080@30 MJPEG.
+  `/dev/video0`) and a supported resolution/framerate — adjust the
+  `runOnDemand` command in `mediamtx/mediamtx.yml` if yours differs from
+  1920x1080@30 MJPEG.
 
 ## 1. Install Tailscale on the Pi only
 
@@ -54,15 +55,16 @@ Check what your webcam actually supports:
 v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
-Edit `systemd/picam-ffmpeg.service`'s `ExecStart` line if your device isn't
+The webcam+mic capture itself isn't a separate always-running service —
+it's the `runOnDemand` command inside `mediamtx/mediamtx.yml`'s `paths.home`
+section, which MediaMTX starts the moment someone's actually watching and
+stops a minute after the last viewer leaves (see `docs/THREAT_MODEL.md` and
+the comments in that file for why). Edit that command if your device isn't
 MJPEG 1920x1080@30 (e.g. switch `-input_format mjpeg` to `-input_format
 yuyv422` if that's what it reports, and adjust resolution/framerate — drop
-`-b:v`/`-maxrate`/`-bufsize` proportionally for a lower resolution). Then:
-
-```bash
-sudo cp systemd/picam-ffmpeg.service /etc/systemd/system/
-sudo systemctl daemon-reload
-```
+`-b:v`/`-maxrate`/`-bufsize` proportionally for a lower resolution). Editing
+`mediamtx.yml` doesn't need a restart — MediaMTX picks up path config
+changes automatically.
 
 ## 3b. Pick your microphone
 
@@ -137,7 +139,8 @@ passwords to this repo** — `mediamtx.yml` in this repo is a template with
 placeholders only; the real one lives at `/etc/picam/mediamtx.yml` on the
 Pi, outside git.
 
-Then create the ffmpeg publisher's env file:
+Then create the env file (loaded by `mediamtx.service`, which is what
+actually runs the capture command — see `mediamtx.yml`'s `runOnDemand`):
 
 ```bash
 sudo tee /etc/picam/ffmpeg.env > /dev/null <<'EOF'
@@ -147,6 +150,10 @@ EOF
 sudo chmod 600 /etc/picam/ffmpeg.env
 sudo chown picam:picam /etc/picam/ffmpeg.env /etc/picam/mediamtx.yml
 ```
+
+(If you ever change this file later — e.g. a new mic — `sudo systemctl
+restart mediamtx` to pick it up; unlike `mediamtx.yml`'s path settings,
+`EnvironmentFile` is only read at process start.)
 
 ## 5. Lock down the firewall
 
@@ -173,13 +180,15 @@ boot, never anyone else's rules.
 
 ```bash
 sudo systemctl enable --now mediamtx
-sudo systemctl enable --now picam-ffmpeg
 sudo systemctl enable --now picam-web
-sudo systemctl status mediamtx picam-ffmpeg picam-web
+sudo systemctl status mediamtx picam-web
 ```
 
-Check logs if something's wrong: `journalctl -u mediamtx -f`,
-`journalctl -u picam-ffmpeg -f`, `journalctl -u picam-web -f`.
+There's no `picam-ffmpeg` service to start — MediaMTX runs that command
+itself, on demand, as configured in `mediamtx.yml`. Check logs if
+something's wrong: `journalctl -u mediamtx -f` (the capture command's own
+output shows up interleaved in here, since MediaMTX is what's running it),
+`journalctl -u picam-web -f`.
 
 ## 7. Expose it publicly with Tailscale Funnel
 
@@ -206,14 +215,21 @@ mobile, no app install required:
   its native login dialog the first time it needs credentials (a `<video>`
   element can't attach custom headers, so this is the reliable path there).
 
-Both give you: live video, listen-in audio from the Pi's mic, digital
-pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom, ⤾ to reset) —
-this crops into the fixed camera frame in software, it doesn't move the
-camera, since the C920 has no motorized PTZ — and the gear icon opens a
-settings panel for picking a microphone, input volume, and (where the
-browser supports `setSinkId`, mainly Chrome) which output device the
-stream plays through. The mic-shaped button is push-to-talk, if you set up
-a speaker in step 3c. The language toggle (EN/KO) remembers your choice.
+The camera and mic aren't running 24/7 — MediaMTX starts that capture the
+moment the page actually requests the stream, so the very first connect
+can take a couple of seconds longer than normal while it spins up (the
+viewer's own auto-reconnect logic covers this, no action needed), and it
+stops itself again about a minute after the last viewer disconnects.
+
+Both playback paths give you: live video, listen-in audio from the Pi's
+mic, digital pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom,
+⤾ to reset) — this crops into the fixed camera frame in software, it
+doesn't move the camera, since the C920 has no motorized PTZ — and the
+gear icon opens a settings panel for picking a microphone, input volume,
+and (where the browser supports `setSinkId`, mainly Chrome) which output
+device the stream plays through. The mic-shaped button is push-to-talk,
+if you set up a speaker in step 3c. The language toggle (EN/KO) remembers
+your choice.
 
 Bookmark the URL on each person's device/home screen.
 

@@ -57,7 +57,6 @@ chmod 750 /etc/picam/firewall.sh
 
 echo "==> Installing systemd units"
 cp "$(dirname "$0")/../systemd/mediamtx.service" /etc/systemd/system/mediamtx.service
-cp "$(dirname "$0")/../systemd/picam-ffmpeg.service" /etc/systemd/system/picam-ffmpeg.service
 cp "$(dirname "$0")/../systemd/picam-web.service" /etc/systemd/system/picam-web.service
 cp "$(dirname "$0")/../systemd/picam-firewall.service" /etc/systemd/system/picam-firewall.service
 cp "$(dirname "$0")/../systemd/picam-keepalive.service" /etc/systemd/system/picam-keepalive.service
@@ -72,5 +71,8 @@ echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find
 echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
 echo "  5. If you have a speaker for push-to-talk, set up /etc/asound.conf (see"
 echo "     docs/SETUP.md) with its ALSA card name"
-echo "  6. systemctl enable --now picam-firewall mediamtx picam-ffmpeg picam-web picam-keepalive"
+echo "  6. systemctl enable --now picam-firewall mediamtx picam-web picam-keepalive"
+echo "     (there is no picam-ffmpeg service to enable — mediamtx.yml's"
+echo "     runOnDemand starts/stops the webcam+mic capture itself, only"
+echo "     while someone is actually watching)"
 echo "  7. Run scripts/tailscale-funnel.sh to expose it publicly"

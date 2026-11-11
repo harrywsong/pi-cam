@@ -23,6 +23,21 @@ feed.** Read this whole page before deploying.
   Tailscale's own `tailscaled`/Funnel proxy, which is a well-audited,
   frequently-patched piece of infrastructure, not this repo's code.
 
+## On-demand capture
+
+The webcam and mic only run while at least one viewer is actually
+connected — MediaMTX's own `runOnDemand`/`runOnDemandCloseAfter` (configured
+in `mediamtx.yml`'s `paths.home`) starts the capture command on the first
+reader and sends it SIGINT about a minute after the last one disconnects,
+rather than it running as an always-on systemd service. Besides the
+obvious privacy/wear benefit of a camera that isn't recording when nobody's
+watching, this also sidesteps a real issue found during testing: v4l2
+(video) and ALSA (audio) are two independent hardware clocks that drift
+against each other over a long session, eventually showing up as
+progressively duplicated frames and an ALSA buffer xrun — shorter,
+on-demand sessions simply don't run long enough to accumulate much of that
+drift (on top of the `-use_wallclock_as_timestamps` fix applied directly).
+
 ## Out of scope / residual risk — be aware of these
 
 - **Credential compromise is now the main risk, full stop.** If either
@@ -36,10 +51,12 @@ feed.** Read this whole page before deploying.
   `*.ts.net` URL still has to also have valid credentials, but if you'd
   rather the URL not even be guessable/discoverable long-term, avoid
   posting it anywhere public or searchable.
-- **Always-on microphone.** The stream carries continuous audio from the
-  Pi's mic. Anyone with valid credentials can listen in at any time. If
-  that's ever unwanted, stop `picam-ffmpeg`'s audio input (drop the
-  `-f alsa -i ...` lines) or unplug the mic.
+- **The microphone is live whenever anyone's watching, not just the camera.**
+  The capture (video + audio together) only runs while at least one viewer
+  is connected — see "On-demand capture" below — but for the duration of
+  that session, anyone with valid credentials can listen in. If that's ever
+  unwanted independent of viewing, remove the `-f alsa -i ...` lines from
+  `mediamtx.yml`'s `runOnDemand` command, or unplug the mic.
 - **A compromised viewer device.** If one of the two people's phones/
   laptops is compromised (malware, stolen+unlocked, browser autofill
   exposed), the attacker inherits whatever credentials are saved there.
@@ -85,12 +102,13 @@ feed.** Read this whole page before deploying.
   files as the unprivileged `picam` user, same as before this feature.
 - **The `publisher` password is visible locally via `ps`/`/proc`.** ffmpeg's
   RTSP output embeds it in the URL it's invoked with (`rtsp://publisher:
-  PASS@127.0.0.1:8554/home`), which is unavoidable with ffmpeg's RTSP client
-  — there's no out-of-band credential option. This only matters to local
-  root on the Pi (who already has full access anyway), never to anything
-  over the network, and it's a separate, publish-only credential from the
-  two viewer passwords, so it doesn't widen the public-facing surface.
-  Avoid running `systemctl status`/`ps` for this unit somewhere it might be
+  PASS@127.0.0.1:$RTSP_PORT/$MTX_PATH`), which is unavoidable with ffmpeg's
+  RTSP client — there's no out-of-band credential option. This only matters
+  to local root on the Pi (who already has full access anyway), never to
+  anything over the network, and it's a separate, publish-only credential
+  from the two viewer passwords, so it doesn't widen the public-facing
+  surface. Avoid running `ps`/`ps aux` for this process (it shows up as a
+  child of `mediamtx`, spawned by its `runOnDemand`) somewhere it might be
   logged or screen-shared.
 
 ## If you want the stronger, tailnet-only alternative

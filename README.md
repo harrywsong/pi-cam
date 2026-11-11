@@ -14,6 +14,12 @@ install required on the viewer's side.
 
 ## Features
 
+- **The camera and mic only run while someone's actually watching.** MediaMTX
+  starts the capture on the first viewer and stops it ~1 minute after the
+  last one leaves (native `runOnDemand`/`runOnDemandCloseAfter`, not a
+  custom scheduler) — no permanently-recording webcam, less wear, and
+  shorter sessions sidestep a long-session AV-sync drift issue that showed
+  up during testing.
 - **Video + two-way audio.** The Logitech C920's built-in mic streams
   alongside video (listen-in), and a push-to-talk button lets a viewer
   speak into a USB speaker on the Pi (`web/server.py`, a small backend that
@@ -42,6 +48,7 @@ install required on the viewer's side.
 
 ```
 Webcam+mic --(v4l2+alsa)--> ffmpeg --(RTSP, H264+AAC)--> MediaMTX (HLS, auth)
+     ^ started/stopped by MediaMTX's runOnDemand, only while someone's watching
                                                                |
                                                      127.0.0.1-only ports
                                                                |
@@ -66,7 +73,9 @@ the hardening checklist there (strong unique passwords are non-negotiable).
 - `docs/SETUP.md` — step-by-step install guide for the Pi.
 - `docs/THREAT_MODEL.md` — what this does and doesn't protect against.
 - `mediamtx/mediamtx.yml` — MediaMTX config template (auth, paths, bind address).
-- `systemd/` — systemd unit files for the capture, MediaMTX, and web viewer.
+- `systemd/` — systemd unit files for MediaMTX, the web viewer, the
+  keep-alive tone, and the firewall reapply-on-boot unit (the webcam/mic
+  capture itself has no unit of its own — see `mediamtx.yml`'s `runOnDemand`).
 - `scripts/` — install/firewall/Funnel helper scripts to run on the Pi.
 - `web/` — viewer page (login, HLS player, pan/zoom, settings, push-to-talk)
   and `server.py`, the backend that serves it and handles push-to-talk audio.

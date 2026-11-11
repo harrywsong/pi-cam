@@ -5,13 +5,17 @@ before push-to-talk existed. Serves the static viewer files and adds a
 websocket endpoint that decodes incoming mic audio (webm/opus from the
 browser's MediaRecorder) and plays it out through the Bose speaker.
 
+(The webcam/mic capture itself runs on-demand — started/stopped by
+MediaMTX's own runOnDemand/runOnDemandCloseAfter, configured in
+mediamtx.yml's paths.home — not by anything in this file.)
+
 Credentials are not duplicated here: they're read straight out of
 mediamtx.yml (the same sha256 hashes MediaMTX itself checks), so there is
 exactly one place a password/hash ever needs to change.
 
 Browsers can't attach an Authorization header to a WebSocket handshake, so
 push-to-talk uses a short-lived token instead of ever putting the real
-password in a URL: GET /talk-token (Basic Auth) -> one-time token, then
+password in a URL: GET /auth-token (Basic Auth) -> one-time token, then
 GET /talk-ws?token=... opens the audio socket.
 """
 
@@ -81,7 +85,7 @@ def _prune_expired_tokens():
         _tokens.pop(tok, None)
 
 
-async def talk_token(request):
+async def auth_token(request):
     creds = parse_basic_auth(request)
     if not creds or not check_password(*creds):
         return web.Response(
@@ -157,7 +161,7 @@ async def index(request):
 def build_app():
     app = web.Application()
     app.router.add_get("/", index)
-    app.router.add_get("/talk-token", talk_token)
+    app.router.add_get("/auth-token", auth_token)
     app.router.add_get("/talk-ws", talk_ws)
     app.router.add_static("/", STATIC_DIR, show_index=False)
     return app
