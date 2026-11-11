@@ -1,5 +1,5 @@
 // pi-cam custom viewer: HLS playback (served same-origin via Tailscale
-// Funnel) + client-side digital pan/zoom.
+// Funnel) + client-side digital pan/zoom + premium controls.
 //
 // Two playback paths:
 //  - Safari/iOS (native HLS support): just point <video> at the stream and
@@ -23,12 +23,27 @@ const statusEl = document.getElementById("view-status");
 let hls = null;
 const nativeHlsSupport = player.canPlayType("application/vnd.apple.mpegurl") !== "";
 
+function showError(key) {
+  loginError.textContent = t(key);
+  loginError.hidden = false;
+}
+
+function enterViewer() {
+  loginScreen.hidden = true;
+  viewScreen.hidden = false;
+}
+
 if (nativeHlsSupport) {
   // Safari/iOS: skip our login form entirely. The browser will show its own
   // native username/password prompt the first time it hits a 401.
-  loginScreen.hidden = true;
-  viewScreen.hidden = false;
-  statusEl.textContent = "If prompted, enter your pi-cam username/password.";
+  enterViewer();
+  statusEl.textContent = t("nativePrompt");
+  player.addEventListener("loadeddata", () => {
+    statusEl.textContent = "";
+  });
+  player.addEventListener("error", () => {
+    statusEl.textContent = t("reconnectHint");
+  });
   player.src = STREAM_URL;
 } else {
   loginForm.addEventListener("submit", (e) => {
@@ -36,14 +51,16 @@ if (nativeHlsSupport) {
     loginError.hidden = true;
     const user = document.getElementById("login-user").value.trim();
     const pass = document.getElementById("login-pass").value;
+    document.getElementById("login-form").querySelector("button").disabled = true;
+    statusEl.textContent = t("connecting");
 
     if (!window.Hls || !window.Hls.isSupported()) {
-      loginError.textContent = "This browser can't play HLS. Try Safari or Chrome.";
-      loginError.hidden = false;
+      showError("unsupportedBrowser");
       return;
     }
 
     hls = new window.Hls({
+      lowLatencyMode: true,
       xhrSetup: (xhr) => {
         xhr.setRequestHeader("Authorization", "Basic " + btoa(`${user}:${pass}`));
       },
@@ -52,29 +69,34 @@ if (nativeHlsSupport) {
     hls.on(window.Hls.Events.ERROR, (_evt, data) => {
       if (data.fatal) {
         if (data.response && (data.response.code === 401 || data.response.code === 403)) {
-          loginError.textContent = "Wrong username/password";
+          showError("wrongCredentials");
         } else {
-          loginError.textContent = "Playback error — see console";
+          showError("playbackError");
           console.error("hls.js fatal error", data);
         }
-        loginError.hidden = false;
         hls.destroy();
         hls = null;
         viewScreen.hidden = true;
         loginScreen.hidden = false;
+        loginForm.querySelector("button").disabled = false;
       }
     });
 
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-      loginScreen.hidden = true;
-      viewScreen.hidden = false;
+      enterViewer();
       statusEl.textContent = "";
       player.play().catch(() => {
-        statusEl.textContent = "Tap the video to start playback";
+        statusEl.textContent = t("tapToStart");
       });
     });
 
-    hls.loadSource(STREAM_URL);
+    // attachMedia before loadSource: hls.js's documented order, avoids
+    // edge cases on some mobile browsers where the reverse order silently
+    // never fires MANIFEST_PARSED. Listener registered before attachMedia
+    // is called, in case it fires MEDIA_ATTACHED synchronously.
+    hls.on(window.Hls.Events.MEDIA_ATTACHED, () => {
+      hls.loadSource(STREAM_URL);
+    });
     hls.attachMedia(player);
   });
 }
@@ -92,10 +114,88 @@ function disconnect() {
 }
 
 document.getElementById("disconnect").addEventListener("click", disconnect);
-document.getElementById("mute").addEventListener("click", (e) => {
-  player.muted = !player.muted;
-  e.target.textContent = player.muted ? "🔇" : "🔊";
+
+// --- Play / pause ---
+
+const playPauseBtn = document.getElementById("play-pause");
+const iconPause = playPauseBtn.querySelector(".icon-pause");
+const iconPlay = playPauseBtn.querySelector(".icon-play");
+
+function syncPlayPauseIcon() {
+  const playing = !player.paused && !player.ended;
+  iconPause.hidden = !playing;
+  iconPlay.hidden = playing;
+  playPauseBtn.title = t(playing ? "pauseTitle" : "playTitle");
+  playPauseBtn.setAttribute("aria-label", playPauseBtn.title);
+}
+
+playPauseBtn.addEventListener("click", () => {
+  if (player.paused) player.play().catch(() => {});
+  else player.pause();
 });
+player.addEventListener("play", syncPlayPauseIcon);
+player.addEventListener("pause", syncPlayPauseIcon);
+
+// --- Volume / mute ---
+
+const muteBtn = document.getElementById("mute");
+const iconVolOn = muteBtn.querySelector(".icon-vol-on");
+const iconVolOff = muteBtn.querySelector(".icon-vol-off");
+const volumeSlider = document.getElementById("volume");
+
+function syncVolumeIcon() {
+  const muted = player.muted || player.volume === 0;
+  iconVolOn.hidden = muted;
+  iconVolOff.hidden = !muted;
+  muteBtn.title = t(muted ? "unmuteTitle" : "muteTitle");
+  muteBtn.setAttribute("aria-label", muteBtn.title);
+}
+
+muteBtn.addEventListener("click", () => {
+  player.muted = !player.muted;
+  if (!player.muted && player.volume === 0) {
+    player.volume = 1;
+    volumeSlider.value = 100;
+  }
+  syncVolumeIcon();
+});
+
+volumeSlider.addEventListener("input", () => {
+  const v = Number(volumeSlider.value) / 100;
+  player.volume = v;
+  player.muted = v === 0;
+  syncVolumeIcon();
+});
+
+syncVolumeIcon();
+syncPlayPauseIcon();
+document.addEventListener("picam:langchange", () => {
+  syncVolumeIcon();
+  syncPlayPauseIcon();
+});
+
+// --- Fullscreen ---
+
+document.getElementById("fullscreen").addEventListener("click", () => {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    stage.requestFullscreen().catch(() => {});
+  }
+});
+
+// --- Auto-hide controls after inactivity ---
+
+let hideTimer = null;
+function showControls() {
+  stage.classList.remove("controls-hidden");
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => stage.classList.add("controls-hidden"), 3000);
+}
+["pointermove", "pointerdown", "touchstart"].forEach((evt) =>
+  stage.addEventListener(evt, showControls)
+);
+showControls();
 
 // --- Digital pan/zoom (client-side only; the camera itself doesn't move) ---
 
@@ -107,6 +207,7 @@ const MAX_SCALE = 4;
 
 function applyTransform() {
   player.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  stage.classList.toggle("zoomed", scale > 1);
 }
 
 function clampPan() {

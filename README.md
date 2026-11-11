@@ -23,6 +23,13 @@ install required on the viewer's side.
 - **Works on desktop and mobile** out of the box: hls.js on Chrome/Firefox/
   Edge/Android, native HLS playback + the browser's own login prompt on
   Safari/iOS.
+- **Low-latency HLS** (LL-HLS, ~1-2s instead of classic HLS's 6-10s), with
+  ffmpeg's keyframe interval tuned to match MediaMTX's segment boundaries.
+- **A real control bar**: play/pause, volume slider + mute, fullscreen, a
+  live indicator, and the pan/zoom controls, auto-hiding after a few seconds
+  idle, over a dark glass UI.
+- **Korean + English**, auto-detected from the browser and switchable with
+  one tap (`web/i18n.js`).
 
 ## Architecture
 

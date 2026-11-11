@@ -2,20 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pi-cam</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 </head>
 <body>
   <div id="login-screen" class="screen">
-    <form id="login-form">
-      <h1>pi-cam</h1>
-      <p class="hint">Use the username/password you were given. They're kept
-        in this browser tab only (cleared when you close it).</p>
-      <label>Username <input id="login-user" autocomplete="username" required></label>
-      <label>Password <input id="login-pass" type="password" autocomplete="current-password" required></label>
-      <button type="submit">Connect</button>
+    <button id="lang-toggle-login" class="lang-pill" type="button">한국어</button>
+    <form id="login-form" class="card">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <h1 data-i18n="brandName">pi-cam</h1>
+      </div>
+      <p class="hint" data-i18n="loginHint">Use the username/password you were given. They're kept in this browser tab only.</p>
+      <label data-i18n="usernameLabel">Username
+        <input id="login-user" autocomplete="username" required>
+      </label>
+      <label data-i18n="passwordLabel">Password
+        <input id="login-pass" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn-primary" data-i18n="connectButton">Connect</button>
       <p id="login-error" class="error" hidden></p>
     </form>
   </div>
@@ -23,17 +30,48 @@
   <div id="view-screen" class="screen" hidden>
     <div id="stage">
       <video id="player" autoplay playsinline></video>
+
+      <div id="top-bar" class="overlay-bar">
+        <div class="live-badge"><span class="live-dot"></span><span data-i18n="live">LIVE</span></div>
+        <div id="top-bar-actions">
+          <button id="lang-toggle-view" class="icon-btn" type="button" title="한국어">EN</button>
+          <button id="disconnect" class="icon-btn" type="button" data-i18n-title="disconnectTitle" title="Disconnect">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <p id="view-status" class="hint status-overlay"></p>
+
+      <div id="bottom-bar" class="overlay-bar controls">
+        <button id="play-pause" class="icon-btn" type="button" title="Pause">
+          <svg class="icon-pause" viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor"/></svg>
+          <svg class="icon-play" viewBox="0 0 24 24" hidden><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>
+        </button>
+
+        <button id="mute" class="icon-btn" type="button" title="Mute">
+          <svg class="icon-vol-on" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z" fill="currentColor"/><path d="M16 8a5 5 0 010 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          <svg class="icon-vol-off" viewBox="0 0 24 24" hidden><path d="M4 9v6h4l5 5V4L8 9z" fill="currentColor"/><path d="M16 9l5 5m0-5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+
+        <input id="volume" class="volume-slider" type="range" min="0" max="100" value="100" aria-label="Volume">
+
+        <div class="spacer"></div>
+
+        <div class="zoom-group">
+          <button id="zoom-out" class="icon-btn" type="button" data-i18n-title="zoomOutTitle" title="Zoom out">−</button>
+          <button id="zoom-reset" class="icon-btn" type="button" data-i18n-title="zoomResetTitle" title="Reset view">⤾</button>
+          <button id="zoom-in" class="icon-btn" type="button" data-i18n-title="zoomInTitle" title="Zoom in">+</button>
+        </div>
+
+        <button id="fullscreen" class="icon-btn" type="button" data-i18n-title="fullscreenTitle" title="Fullscreen">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
     </div>
-    <div id="controls">
-      <button id="zoom-out" title="Zoom out">−</button>
-      <button id="zoom-reset" title="Reset view">⤾</button>
-      <button id="zoom-in" title="Zoom in">+</button>
-      <button id="mute" title="Mute/unmute audio">🔊</button>
-      <button id="disconnect" title="Disconnect">✕</button>
-    </div>
-    <p id="view-status" class="hint"></p>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

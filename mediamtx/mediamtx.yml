@@ -19,7 +19,10 @@
 # Viewer-facing playback is HLS, not WebRTC: Funnel proxies plain HTTPS, and
 # WebRTC's UDP media (ICE) can't ride through that without a public TURN
 # relay. HLS runs entirely over HTTPS so it works through Funnel with no
-# extra infrastructure, at the cost of a couple seconds of latency.
+# extra infrastructure. Using the Low-Latency HLS (LL-HLS) variant gets this
+# down to roughly 1-2s end-to-end instead of classic HLS's 6-10s — still not
+# as instant as WebRTC, but much closer. Both hls.js (lowLatencyMode) and
+# native Safari/iOS HLS understand LL-HLS's #EXT-X-PART tags.
 rtspAddress: 127.0.0.1:8554
 webrtcAddress: 127.0.0.1:8889
 hlsAddress: 127.0.0.1:8888
@@ -30,7 +33,10 @@ rtsp: yes            # localhost-only, used solely for ffmpeg to publish
 rtmp: no
 srt: no
 hls: yes             # primary viewer path, proxied out via Tailscale Funnel
-hlsVariant: mpegts    # classic TS segments — broadest compatibility (Safari/iOS native HLS + hls.js everywhere else)
+hlsVariant: lowLatency  # LL-HLS (fMP4 + partial segments) for ~1-2s latency
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentCount: 3
 webrtc: no           # disabled: not reachable through Funnel without a TURN relay (see note above)
 api: no              # leave off unless you need the HTTP control API
 metrics: no
