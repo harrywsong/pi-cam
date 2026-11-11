@@ -216,12 +216,16 @@ Share `https://<name>.<tailnet>.ts.net/` (find the exact hostname with
 `person1`/`person2` username/password. From any browser, desktop or
 mobile, no app install required:
 
-- Open the URL. On Chrome/Firefox/Edge/Android, you'll get the custom
-  viewer's login form (`web/`) — enter the username/password once, kept
-  only in that browser tab's `sessionStorage`.
-- On Safari/iOS, the page skips the form and the browser itself will pop up
-  its native login dialog the first time it needs credentials (a `<video>`
-  element can't attach custom headers, so this is the reliable path there).
+- Open the URL. On any modern browser (Chrome/Firefox/Edge/Safari, Android,
+  iPad, iPhone on iOS 17.1+) you'll get the custom viewer's login form
+  (`web/`) — enter the username/password once; it's kept only in memory for
+  that tab.
+- Only on older iPhones without Media Source Extensions, the page skips the
+  form and the browser itself pops up its native login dialog the first
+  time it needs credentials (a `<video>` element can't attach custom
+  headers). Note: Chrome also *claims* native HLS support, but its built-in
+  player can't parse this LL-HLS stream (`DEMUXER_ERROR_COULD_NOT_PARSE`),
+  which is why the page prefers hls.js whenever it's available.
 
 The camera and mic aren't running 24/7 — MediaMTX starts that capture the
 moment the page actually requests the stream, so the very first connect

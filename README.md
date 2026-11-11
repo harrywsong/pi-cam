@@ -36,9 +36,10 @@ install required on the viewer's side.
   independently crop/zoom into the frame client-side (drag to pan, scroll or
   pinch to zoom). This is software-only: the C920 has no motorized PTZ, so
   the camera itself never physically moves.
-- **Works on desktop and mobile** out of the box: hls.js on Chrome/Firefox/
-  Edge/Android, native HLS playback + the browser's own login prompt on
-  Safari/iOS.
+- **Works on desktop and mobile** out of the box: hls.js on every browser
+  with Media Source Extensions (Chrome/Firefox/Edge/Safari/Android/iPad,
+  iPhone iOS 17.1+); native HLS + the browser's own login prompt only as a
+  fallback on older iPhones.
 - **Low-latency HLS** (LL-HLS, ~1-2s instead of classic HLS's 6-10s), with
   ffmpeg's keyframe interval tuned to match MediaMTX's segment boundaries.
 - **A real control bar**: play/pause, volume slider + mute, fullscreen, a

@@ -1,14 +1,13 @@
 // pi-cam custom viewer: HLS playback (served same-origin via Tailscale
 // Funnel) + client-side digital pan/zoom + premium controls.
 //
-// Two playback paths:
-//  - Safari/iOS (native HLS support): just point <video> at the stream and
-//    let the browser's own HTTP Basic Auth dialog handle credentials — a
-//    <video> element can't attach custom headers, so this is the only
-//    reliable way to authenticate there.
-//  - Everything else (Chrome/Firefox/Edge, desktop and Android): use hls.js,
-//    which lets us attach an Authorization header built from the login form
-//    so there's one consistent UI.
+// Playback paths (see `useHlsJs` below for why the order matters):
+//  - hls.js wherever Media Source Extensions exist — Chrome/Firefox/Edge,
+//    desktop Safari, Android, iPadOS, iPhone on iOS 17.1+. It attaches an
+//    Authorization header built from our login form, one consistent UI.
+//  - Native <video> HLS only as a last resort (older iPhones): the
+//    browser's own HTTP Basic Auth dialog handles credentials, since a
+//    <video> element can't attach custom headers.
 
 const STREAM_URL = "/home/index.m3u8"; // same-origin: MediaMTX HLS, proxied by Tailscale Funnel
 
@@ -34,124 +33,161 @@ function enterViewer() {
   viewScreen.hidden = false;
 }
 
-const MAX_AUTO_RECOVERIES = 6; // per playback session; a transient server-side
-// hiccup (a dropped segment, a brief encoder stall) shouldn't force a manual
-// reload — only give up and ask for one after several recoveries in a row
-// still aren't sticking.
-let nativeRecoveryCount = 0;
-let nativeRecoveryTimer = null;
+// Which player to use: hls.js whenever the browser has Media Source
+// Extensions (Chrome/Edge/Firefox/desktop Safari/iPadOS, and iPhone on iOS
+// 17.1+ via ManagedMediaSource), native <video> HLS only as a last resort.
+//
+// Do NOT pick native just because canPlayType() says it can: Chrome (desktop
+// since ~v141, and Android for years) answers "maybe" for HLS, which used to
+// route every Chrome viewer onto the native path — no login form, the
+// browser's built-in HLS player, which can't keep up with this LL-HLS stream
+// (EXT-X-PART / blocking playlist reloads) and errors out, ending at
+// "connection lost — reload". hls.js plays it reliably everywhere MSE exists.
+const useHlsJs = !!(window.Hls && window.Hls.isSupported());
 
-if (nativeHlsSupport) {
-  // Safari/iOS: skip our login form entirely. The browser will show its own
+// Reconnect with capped exponential backoff, forever: the stream is
+// on-demand (the camera can take a few seconds to come up) and a viewer who
+// opened the page wants to see it, so a transient failure must never leave
+// them stuck on a dead player that only a manual reload fixes.
+const RETRY_BASE_MS = 1000;
+const RETRY_MAX_MS = 10000;
+let retryAttempt = 0;
+let retryTimer = null;
+let wantPlayback = false; // false after Disconnect — cancels pending retries
+
+function nextRetryDelay() {
+  const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** retryAttempt);
+  retryAttempt += 1;
+  return delay;
+}
+
+function scheduleRetry(fn) {
+  clearTimeout(retryTimer);
+  if (!wantPlayback) return;
+  statusEl.textContent = t("connecting");
+  retryTimer = setTimeout(() => {
+    if (wantPlayback) fn();
+  }, nextRetryDelay());
+}
+
+player.addEventListener("playing", () => {
+  retryAttempt = 0; // played successfully, reset the backoff
+  statusEl.textContent = "";
+});
+
+function destroyHls() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+}
+
+function backToLogin(key, logData) {
+  wantPlayback = false;
+  clearTimeout(retryTimer);
+  if (logData) console.error("hls.js fatal error", logData);
+  destroyHls();
+  showError(key);
+  viewScreen.hidden = true;
+  loginScreen.hidden = false;
+  loginForm.querySelector("button").disabled = false;
+}
+
+function startHls() {
+  destroyHls();
+  const { user, pass } = storedCreds;
+  const instance = new window.Hls({
+    lowLatencyMode: true,
+    // Catch back up to the live edge instead of drifting further behind
+    // it over time (the default behavior just keeps playing from
+    // wherever it started, so any stall/rebuffer accumulates forever).
+    liveSyncDurationCount: 3,
+    liveMaxLatencyDurationCount: 6,
+    maxLiveSyncPlaybackRate: 1.3,
+    xhrSetup: (xhr) => {
+      xhr.setRequestHeader("Authorization", "Basic " + btoa(`${user}:${pass}`));
+    },
+  });
+  hls = instance;
+  let mediaRecoveryTried = false;
+
+  instance.on(window.Hls.Events.ERROR, (_evt, data) => {
+    if (!data.fatal || hls !== instance) return;
+
+    if (data.response && (data.response.code === 401 || data.response.code === 403)) {
+      backToLogin("wrongCredentials");
+      return;
+    }
+    console.warn("hls.js fatal error, restarting", data.type, data.details);
+    if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && !mediaRecoveryTried) {
+      // hls.js's documented in-place recovery for decode/buffer errors.
+      mediaRecoveryTried = true;
+      instance.recoverMediaError();
+      return;
+    }
+    // Anything else (manifest/playlist/fragment load failure, timeout, a
+    // second media error): tear down and start a fresh instance. Note
+    // hls.startLoad() is NOT enough here — after a fatal manifest error
+    // there are no levels to resume, so it silently does nothing and the
+    // player sits on "connecting" forever.
+    destroyHls();
+    scheduleRetry(startHls);
+  });
+
+  instance.on(window.Hls.Events.MANIFEST_PARSED, () => {
+    if (hls !== instance) return;
+    enterViewer();
+    player.play().catch(() => {
+      statusEl.textContent = t("tapToStart");
+    });
+  });
+
+  // attachMedia before loadSource: hls.js's documented order, avoids
+  // edge cases on some mobile browsers where the reverse order silently
+  // never fires MANIFEST_PARSED. Listener registered before attachMedia
+  // is called, in case it fires MEDIA_ATTACHED synchronously.
+  instance.on(window.Hls.Events.MEDIA_ATTACHED, () => {
+    if (hls === instance) instance.loadSource(STREAM_URL);
+  });
+  // iOS ManagedMediaSource only engages when remote playback (AirPlay) is
+  // disabled or has an alternate source; we have none, so disable it.
+  player.disableRemotePlayback = true;
+  instance.attachMedia(player);
+}
+
+function startNative() {
+  player.src = STREAM_URL;
+  player.load();
+  player.play().catch(() => {});
+}
+
+if (useHlsJs) {
+  loginForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    loginError.hidden = true;
+    loginForm.querySelector("button").disabled = true;
+    statusEl.textContent = t("connecting");
+    storedCreds = {
+      user: document.getElementById("login-user").value.trim(),
+      pass: document.getElementById("login-pass").value,
+    };
+    wantPlayback = true;
+    retryAttempt = 0;
+    startHls();
+  });
+} else if (nativeHlsSupport) {
+  // Last resort (old iPhones without ManagedMediaSource): skip our login
+  // form; a <video> can't send custom headers, so the browser shows its own
   // native username/password prompt the first time it hits a 401.
   enterViewer();
   statusEl.textContent = t("nativePrompt");
-  player.addEventListener("loadeddata", () => {
-    statusEl.textContent = "";
-    nativeRecoveryCount = 0; // played successfully, reset the budget
-  });
-  player.addEventListener("error", () => {
-    if (nativeRecoveryCount >= MAX_AUTO_RECOVERIES) {
-      statusEl.textContent = t("reconnectHint");
-      return;
-    }
-    nativeRecoveryCount += 1;
-    statusEl.textContent = t("connecting");
-    clearTimeout(nativeRecoveryTimer);
-    nativeRecoveryTimer = setTimeout(() => {
-      player.src = STREAM_URL;
-      player.load();
-      player.play().catch(() => {});
-    }, 2000);
-  });
+  wantPlayback = true;
+  player.addEventListener("error", () => scheduleRetry(startNative));
   player.src = STREAM_URL;
 } else {
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    loginError.hidden = true;
-    const user = document.getElementById("login-user").value.trim();
-    const pass = document.getElementById("login-pass").value;
-    document.getElementById("login-form").querySelector("button").disabled = true;
-    statusEl.textContent = t("connecting");
-
-    if (!window.Hls || !window.Hls.isSupported()) {
-      showError("unsupportedBrowser");
-      return;
-    }
-
-    storedCreds = { user, pass };
-
-    hls = new window.Hls({
-      lowLatencyMode: true,
-      // Catch back up to the live edge instead of drifting further behind
-      // it over time (the default behavior just keeps playing from
-      // wherever it started, so any stall/rebuffer accumulates forever).
-      liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 6,
-      maxLiveSyncPlaybackRate: 1.3,
-      xhrSetup: (xhr) => {
-        xhr.setRequestHeader("Authorization", "Basic " + btoa(`${user}:${pass}`));
-      },
-    });
-
-    let hlsRecoveryCount = 0;
-
-    function giveUp(key, logData) {
-      showError(key);
-      if (logData) console.error("hls.js fatal error", logData);
-      hls.destroy();
-      hls = null;
-      viewScreen.hidden = true;
-      loginScreen.hidden = false;
-      loginForm.querySelector("button").disabled = false;
-    }
-
-    hls.on(window.Hls.Events.ERROR, (_evt, data) => {
-      if (!data.fatal) return;
-
-      if (data.response && (data.response.code === 401 || data.response.code === 403)) {
-        giveUp("wrongCredentials");
-        return;
-      }
-      if (hlsRecoveryCount >= MAX_AUTO_RECOVERIES) {
-        giveUp("playbackError", data);
-        return;
-      }
-
-      // hls.js's own recommended recovery pattern: transient network blips
-      // (a dropped segment, a brief encoder stall) just need a restart, not
-      // a full return to the login screen.
-      hlsRecoveryCount += 1;
-      statusEl.textContent = t("connecting");
-      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
-        hls.startLoad();
-      } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-        hls.recoverMediaError();
-      } else {
-        giveUp("playbackError", data);
-      }
-    });
-
-    player.addEventListener("playing", () => {
-      hlsRecoveryCount = 0; // played successfully, reset the budget
-    });
-
-    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-      enterViewer();
-      statusEl.textContent = "";
-      player.play().catch(() => {
-        statusEl.textContent = t("tapToStart");
-      });
-    });
-
-    // attachMedia before loadSource: hls.js's documented order, avoids
-    // edge cases on some mobile browsers where the reverse order silently
-    // never fires MANIFEST_PARSED. Listener registered before attachMedia
-    // is called, in case it fires MEDIA_ATTACHED synchronously.
-    hls.on(window.Hls.Events.MEDIA_ATTACHED, () => {
-      hls.loadSource(STREAM_URL);
-    });
-    hls.attachMedia(player);
+    showError("unsupportedBrowser");
   });
 }
 
@@ -177,15 +213,17 @@ setInterval(() => {
 }, 5000);
 
 function disconnect() {
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
+  wantPlayback = false;
+  clearTimeout(retryTimer);
+  destroyHls();
   player.pause();
   player.removeAttribute("src");
   player.load();
   viewScreen.hidden = true;
-  if (!nativeHlsSupport) loginScreen.hidden = false;
+  if (useHlsJs) {
+    loginScreen.hidden = false;
+    loginForm.querySelector("button").disabled = false;
+  }
 }
 
 document.getElementById("disconnect").addEventListener("click", disconnect);
