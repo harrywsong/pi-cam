@@ -62,16 +62,19 @@ TONE_SECRET_FILE = "/etc/picam/tone-secret"
 # Two deliberately different-shaped chimes: connect rises and is quick/bright
 # (two short high notes), disconnect falls and is slower/lower (two longer
 # low notes) — distinguishable by ear without having to listen closely.
+# volume=2.5: sine sources have plenty of headroom below clipping, and the
+# Bose's own master volume (separately set to 70%, see docs/SETUP.md) does
+# most of the real attenuation — this had been too quiet in practice.
 TONE_FILTERS = {
     "connect": (
-        "[0:a]atrim=duration=0.12,asetpts=PTS-STARTPTS[a0];"
-        "[1:a]atrim=duration=0.18,asetpts=PTS-STARTPTS[a1];"
-        "[a0][a1]concat=n=2:v=0:a=1,volume=0.6[out]"
+        "[0:a]atrim=duration=0.15,asetpts=PTS-STARTPTS[a0];"
+        "[1:a]atrim=duration=0.22,asetpts=PTS-STARTPTS[a1];"
+        "[a0][a1]concat=n=2:v=0:a=1,volume=2.5[out]"
     ),
     "disconnect": (
-        "[0:a]atrim=duration=0.18,asetpts=PTS-STARTPTS[a0];"
-        "[1:a]atrim=duration=0.3,asetpts=PTS-STARTPTS[a1];"
-        "[a0][a1]concat=n=2:v=0:a=1,volume=0.6[out]"
+        "[0:a]atrim=duration=0.22,asetpts=PTS-STARTPTS[a0];"
+        "[1:a]atrim=duration=0.35,asetpts=PTS-STARTPTS[a1];"
+        "[a0][a1]concat=n=2:v=0:a=1,volume=2.5[out]"
     ),
 }
 TONE_FREQUENCIES = {
