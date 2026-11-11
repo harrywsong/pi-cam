@@ -1,0 +1,6 @@
+# Never commit real secrets/config generated on the Pi
+*.env
+/etc/picam/
+secrets/
+*.pem
+*.key

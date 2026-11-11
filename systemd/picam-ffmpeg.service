@@ -1,0 +1,27 @@
+[Unit]
+Description=pi-cam webcam capture -> MediaMTX (RTSP publish)
+After=network-online.target mediamtx.service
+Wants=network-online.target
+Requires=mediamtx.service
+
+[Service]
+# EnvironmentFile holds the publisher password — keep it out of git.
+# See docs/SETUP.md for how to create /etc/picam/ffmpeg.env
+EnvironmentFile=/etc/picam/ffmpeg.env
+ExecStart=/usr/bin/ffmpeg -hide_banner -loglevel warning \
+  -f v4l2 -input_format mjpeg -video_size 1280x720 -framerate 15 -i /dev/video0 \
+  -c:v libx264 -preset veryfast -tune zerolatency -b:v 1200k -maxrate 1200k -bufsize 2400k \
+  -f rtsp -rtsp_transport tcp rtsp://publisher:${PICAM_PUBLISHER_PASS}@127.0.0.1:8554/home
+Restart=always
+RestartSec=3
+User=picam
+Group=video
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

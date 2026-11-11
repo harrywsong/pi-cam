@@ -1,0 +1,75 @@
+###############################################################################
+# mediamtx.yml — pi-cam
+#
+# Copy to /etc/mediamtx/mediamtx.yml on the Pi (or wherever your install uses).
+# Replace the placeholder password hashes before deploying — see
+# docs/SETUP.md for how to generate them. Never commit real password hashes
+# or plaintext passwords to this repo.
+###############################################################################
+
+# --- Network binding -----------------------------------------------------
+# RTSP is only used by ffmpeg to publish the local webcam feed, so it's
+# bound to localhost only — not reachable even on the tailnet.
+# WebRTC/HLS (what viewers actually use) bind to all interfaces, but the OS
+# firewall (see scripts/firewall.sh) only allows the Tailscale subnet
+# (100.64.0.0/10) through on those ports. Binding to all interfaces + a
+# firewall rule is more robust than binding to a literal tailscale0 IP,
+# which can change across re-registrations.
+rtspAddress: 127.0.0.1:8554
+webrtcAddress: :8889
+hlsAddress: :8888
+apiAddress: :9997
+metricsAddress: :9998
+
+rtsp: yes            # localhost-only, used solely for ffmpeg to publish
+rtmp: no
+srt: no
+hls: yes             # simple fallback viewer (works in any browser/Safari)
+webrtc: yes          # best latency, used by the MediaMTX WebRTC web player
+api: no              # leave off unless you need the HTTP control API
+metrics: no
+
+# --- Authentication --------------------------------------------------------
+authMethod: internal
+
+authInternalUsers:
+  # Person 1
+  - user: person1
+    # Generate with: mediamtx-hash-password (or see docs/SETUP.md for the
+    # sha256 one-liner). Do NOT store plaintext here.
+    pass: sha256:REPLACE_WITH_PERSON1_HASH
+    ips: []
+    permissions:
+      - action: read
+        path: home
+      - action: playback
+        path: home
+
+  # Person 2
+  - user: person2
+    pass: sha256:REPLACE_WITH_PERSON2_HASH
+    ips: []
+    permissions:
+      - action: read
+        path: home
+      - action: playback
+        path: home
+
+  # The capture process (ffmpeg) publishing the stream from the webcam.
+  # Only allowed to publish, never to read other paths, and locked to
+  # localhost since ffmpeg runs on the same Pi.
+  - user: publisher
+    pass: sha256:REPLACE_WITH_PUBLISHER_HASH
+    ips: ['127.0.0.1']
+    permissions:
+      - action: publish
+        path: home
+
+  # Deny everything else by default (no catch-all "any" user below this).
+
+# --- Paths -------------------------------------------------------------
+paths:
+  home:
+    # ffmpeg pushes here via RTSP on localhost; nothing external touches
+    # this path directly except through the authenticated publisher user.
+    source: publisher
