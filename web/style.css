@@ -32,11 +32,15 @@ html, body {
 }
 
 /* Critical: a plain [hidden] attribute has the same CSS specificity as a
-   single class selector, so without this, the `.screen { display: flex }`
-   rule above wins the tie (same specificity, later in source) and the
-   `hidden` attribute is silently ignored — both screens render stacked on
-   top of each other regardless of which one JS thinks is showing. */
-.screen[hidden] {
+   single class selector, so without this, a `{ display: flex }` rule on a
+   matching class wins the tie (same specificity, later in source) and the
+   `hidden` attribute is silently ignored. Applies to every class below that
+   sets its own `display` and also gets toggled via the `hidden` attribute
+   from JS (.screen for login/viewer, .card for the settings panel,
+   .talk-badge for the push-to-talk indicator). */
+.screen[hidden],
+.card[hidden],
+.talk-badge[hidden] {
   display: none !important;
 }
 
@@ -200,6 +204,59 @@ input:focus { border-color: var(--accent); }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+.talk-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(79, 140, 255, 0.18);
+  border: 1px solid var(--accent);
+  backdrop-filter: blur(10px);
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.talk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.talk-btn.active {
+  background: var(--accent);
+  color: white;
+}
+
+.settings-panel {
+  position: absolute;
+  top: 4.5rem;
+  right: 1rem;
+  width: min(300px, calc(100vw - 2rem));
+  z-index: 3;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+.settings-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.settings-panel select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.settings-panel input[type="range"] {
+  width: 100%;
 }
 
 .status-overlay {

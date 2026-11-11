@@ -76,8 +76,55 @@ arecord -l
 Look for the webcam in the list (e.g. `card 2: C920 [HD Pro Webcam C920]`) and
 use `plughw:CARD=C920,DEV=0` (substitute the actual card name) as
 `PICAM_AUDIO_DEVICE` in `/etc/picam/ffmpeg.env` — see step 4. This is
-listen-in audio only (Pi mic → viewers); there's no speaker on the Pi, so
-there's no talk-back path.
+listen-in audio (Pi mic → viewers); for push-to-talk the other direction,
+see step 3c.
+
+## 3c. Set up push-to-talk (optional — needs a USB speaker)
+
+If you've got a USB speaker plugged in, find its ALSA card name:
+
+```bash
+aplay -l
+```
+
+Create `/etc/asound.conf` with a `dmix` device wrapping it (substitute your
+card's name — this example uses a Bose Revolve SoundLink), so the
+always-on keep-alive tone and push-to-talk audio can share the device
+instead of fighting for exclusive access:
+
+```bash
+sudo tee /etc/asound.conf > /dev/null <<'EOF'
+pcm.picam_speaker {
+    type dmix
+    ipc_key 1027
+    ipc_perm 0666
+    slave {
+        pcm "hw:CARD=SoundLink,DEV=0"
+        rate 48000
+        channels 2
+        period_size 1024
+        buffer_size 4096
+    }
+}
+ctl.picam_speaker {
+    type hw
+    card "SoundLink"
+}
+EOF
+```
+
+Test it: `ffmpeg -f lavfi -i sine=frequency=440 -ac 2 -t 2 -f alsa picam_speaker`
+should play a short beep. Then enable the keep-alive tone (battery-powered
+portable speakers auto-power-off after a few minutes of silence otherwise —
+this plays a continuous, near-inaudible 19Hz tone to prevent that):
+
+```bash
+sudo systemctl enable --now picam-keepalive
+```
+
+If you don't have a speaker, skip this step — the mic selector and
+push-to-talk button still appear in the settings panel but will show an
+error when pressed, since there's nowhere for the audio to play.
 
 ## 4. Generate credentials (one per person)
 
@@ -169,10 +216,14 @@ mobile, no app install required:
   its native login dialog the first time it needs credentials (a `<video>`
   element can't attach custom headers, so this is the reliable path there).
 
-Both give you: live video, listen-in audio from the Pi's mic, and digital
+Both give you: live video, listen-in audio from the Pi's mic, digital
 pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom, ⤾ to reset) —
 this crops into the fixed camera frame in software, it doesn't move the
-camera, since the C920 has no motorized PTZ.
+camera, since the C920 has no motorized PTZ — and the gear icon opens a
+settings panel for picking a microphone, input volume, and (where the
+browser supports `setSinkId`, mainly Chrome) which output device the
+stream plays through. The mic-shaped button is push-to-talk, if you set up
+a speaker in step 3c. The language toggle (EN/KO) remembers your choice.
 
 Bookmark the URL on each person's device/home screen.
 

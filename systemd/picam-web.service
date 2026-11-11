@@ -1,16 +1,17 @@
 [Unit]
-Description=pi-cam static web viewer (pan/zoom UI, talks to MediaMTX's HLS output)
-After=network-online.target
+Description=pi-cam web backend (static viewer + push-to-talk websocket)
+After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
-# Plain static file server — all auth happens browser-side against MediaMTX's
-# HLS endpoint, this just serves index.html/app.js/style.css. Loopback-only;
-# the only way in is Tailscale Funnel's local reverse proxy
-# (see scripts/tailscale-funnel.sh). scripts/firewall.sh also drops any
-# external packets to this port as defense in depth.
+# Serves the static viewer and a /talk-ws websocket that decodes incoming
+# mic audio and plays it to the Bose speaker (see web/server.py). Loopback-
+# only; the only way in is Tailscale Funnel's local reverse proxy (see
+# scripts/tailscale-funnel.sh). scripts/firewall.sh also drops any external
+# packets to this port as defense in depth. Needs the "audio" group
+# (inherited from the picam user) to spawn ffmpeg against the ALSA device.
 WorkingDirectory=/etc/picam/web
-ExecStart=/usr/bin/python3 -m http.server 8080 --bind 127.0.0.1
+ExecStart=/usr/bin/python3 /etc/picam/web/server.py
 Restart=always
 RestartSec=3
 User=picam

@@ -22,7 +22,7 @@ esac
 
 echo "==> Installing ffmpeg"
 apt-get update
-apt-get install -y ffmpeg nftables python3 alsa-utils
+apt-get install -y ffmpeg nftables python3 python3-aiohttp python3-yaml alsa-utils
 
 echo "==> Creating picam system user"
 id -u picam &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -G video,audio picam
@@ -48,7 +48,7 @@ chmod 750 /etc/picam
 
 echo "==> Laying out web viewer /etc/picam/web"
 mkdir -p /etc/picam/web
-cp "$(dirname "$0")/../web/"*.html "$(dirname "$0")/../web/"*.js "$(dirname "$0")/../web/"*.css /etc/picam/web/
+cp "$(dirname "$0")/../web/"*.html "$(dirname "$0")/../web/"*.js "$(dirname "$0")/../web/"*.css "$(dirname "$0")/../web/"*.py /etc/picam/web/
 chown -R picam:picam /etc/picam/web
 
 echo "==> Copying firewall script to /etc/picam (so picam-firewall.service has a stable path)"
@@ -60,6 +60,7 @@ cp "$(dirname "$0")/../systemd/mediamtx.service" /etc/systemd/system/mediamtx.se
 cp "$(dirname "$0")/../systemd/picam-ffmpeg.service" /etc/systemd/system/picam-ffmpeg.service
 cp "$(dirname "$0")/../systemd/picam-web.service" /etc/systemd/system/picam-web.service
 cp "$(dirname "$0")/../systemd/picam-firewall.service" /etc/systemd/system/picam-firewall.service
+cp "$(dirname "$0")/../systemd/picam-keepalive.service" /etc/systemd/system/picam-keepalive.service
 systemctl daemon-reload
 
 echo ""
@@ -69,5 +70,7 @@ echo "  2. Create /etc/picam/ffmpeg.env with PICAM_PUBLISHER_PASS and PICAM_AUDI
 echo "  3. chmod 600 /etc/picam/ffmpeg.env && chown picam:picam /etc/picam/ffmpeg.env"
 echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find your"
 echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
-echo "  5. systemctl enable --now picam-firewall mediamtx picam-ffmpeg picam-web"
-echo "  6. Run scripts/tailscale-funnel.sh to expose it publicly"
+echo "  5. If you have a speaker for push-to-talk, set up /etc/asound.conf (see"
+echo "     docs/SETUP.md) with its ALSA card name"
+echo "  6. systemctl enable --now picam-firewall mediamtx picam-ffmpeg picam-web picam-keepalive"
+echo "  7. Run scripts/tailscale-funnel.sh to expose it publicly"

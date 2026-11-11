@@ -14,8 +14,15 @@ install required on the viewer's side.
 
 ## Features
 
-- **Video + audio.** The Logitech C920's built-in mic streams alongside
-  video (listen-in only — the Pi has no speaker, so there's no talk-back).
+- **Video + two-way audio.** The Logitech C920's built-in mic streams
+  alongside video (listen-in), and a push-to-talk button lets a viewer
+  speak into a USB speaker on the Pi (`web/server.py`, a small backend that
+  decodes the viewer's mic audio and plays it out). A continuous,
+  near-inaudible keep-alive tone (`picam-keepalive.service`) stops
+  battery-powered portable speakers from auto-powering-off from "silence."
+- **A settings panel**: pick which microphone to use, input volume (real
+  gain, via Web Audio), and — where the browser supports it — which output
+  device (speaker/headphones) plays the incoming stream.
 - **Digital pan/zoom.** A custom web viewer (`web/`) lets each viewer
   independently crop/zoom into the frame client-side (drag to pan, scroll or
   pinch to zoom). This is software-only: the C920 has no motorized PTZ, so
@@ -61,6 +68,7 @@ the hardening checklist there (strong unique passwords are non-negotiable).
 - `mediamtx/mediamtx.yml` — MediaMTX config template (auth, paths, bind address).
 - `systemd/` — systemd unit files for the capture, MediaMTX, and web viewer.
 - `scripts/` — install/firewall/Funnel helper scripts to run on the Pi.
-- `web/` — static custom viewer page (login, HLS player, pan/zoom controls).
+- `web/` — viewer page (login, HLS player, pan/zoom, settings, push-to-talk)
+  and `server.py`, the backend that serves it and handles push-to-talk audio.
 
 Start with `docs/SETUP.md`.

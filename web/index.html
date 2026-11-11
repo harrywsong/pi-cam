@@ -16,10 +16,10 @@
         <h1 data-i18n="brandName">pi-cam</h1>
       </div>
       <p class="hint" data-i18n="loginHint">Use the username/password you were given. They're kept in this browser tab only.</p>
-      <label data-i18n="usernameLabel">Username
+      <label><span data-i18n="usernameLabel">Username</span>
         <input id="login-user" autocomplete="username" required>
       </label>
-      <label data-i18n="passwordLabel">Password
+      <label><span data-i18n="passwordLabel">Password</span>
         <input id="login-pass" type="password" autocomplete="current-password" required>
       </label>
       <button type="submit" class="btn-primary" data-i18n="connectButton">Connect</button>
@@ -33,12 +33,34 @@
 
       <div id="top-bar" class="overlay-bar">
         <div class="live-badge"><span class="live-dot"></span><span data-i18n="live">LIVE</span></div>
+        <div id="talk-badge" class="talk-badge" hidden><span class="talk-dot"></span><span data-i18n="talking">Talking…</span></div>
         <div id="top-bar-actions">
           <button id="lang-toggle-view" class="icon-btn" type="button" title="한국어">EN</button>
+          <button id="settings-toggle" class="icon-btn" type="button" data-i18n-title="settingsTitle" title="Settings">
+            <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2" fill="none"/><path d="M19.4 13a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V19a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H4a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H10a1.65 1.65 0 001-1.51V4a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V10a1.65 1.65 0 001.51 1H20a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <button id="disconnect" class="icon-btn" type="button" data-i18n-title="disconnectTitle" title="Disconnect">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
         </div>
+      </div>
+
+      <div id="settings-panel" class="card settings-panel" hidden>
+        <h2 data-i18n="settingsTitle">Settings</h2>
+
+        <label><span data-i18n="micLabel">Microphone</span>
+          <select id="mic-select"></select>
+        </label>
+        <label><span data-i18n="inputVolumeLabel">Input volume</span>
+          <input id="input-volume" type="range" min="0" max="100" value="100">
+        </label>
+        <p class="hint" data-i18n="pttHint">Hold the mic button to talk.</p>
+
+        <label id="output-device-row" hidden><span data-i18n="outputDeviceLabel">Speaker / headphones</span>
+          <select id="output-select"></select>
+        </label>
+
+        <button id="settings-close" class="btn-primary" data-i18n="closeButton">Close</button>
       </div>
 
       <p id="view-status" class="hint status-overlay"></p>
@@ -55,6 +77,10 @@
         </button>
 
         <input id="volume" class="volume-slider" type="range" min="0" max="100" value="100" aria-label="Volume">
+
+        <button id="push-to-talk" class="icon-btn talk-btn" type="button" data-i18n-title="pttTitle" title="Push to talk">
+          <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V6a3 3 0 00-6 0v5a3 3 0 003 3z" fill="currentColor"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        </button>
 
         <div class="spacer"></div>
 

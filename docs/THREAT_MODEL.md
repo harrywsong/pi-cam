@@ -60,6 +60,17 @@ feed.** Read this whole page before deploying.
 - **Digital pan/zoom is purely client-side.** It only crops the decoded
   video in the viewer's own browser; it doesn't change what's captured or
   sent, and one viewer's pan/zoom never affects another's. No new surface.
+- **`web/server.py` is a second piece of custom code with network exposure**
+  (where before it was just a stock static-file server). It reuses the same
+  credentials as MediaMTX (reads the sha256 hashes straight out of
+  `mediamtx.yml` — one source of truth, not a second place for a password
+  to go stale), and `/talk-ws` requires a short-lived, single-use token
+  fetched over `/talk-token` rather than ever taking a real password in a
+  URL/websocket. Keep `python3-aiohttp` updated along with everything else.
+- **Push-to-talk audio plays on a real speaker in the room, unauthenticated
+  beyond the same credential check as everything else.** Anyone with valid
+  credentials can speak into the room at will. This is the same trust
+  level as the existing listen-in audio, just in the other direction.
 - **The `publisher` password is visible locally via `ps`/`/proc`.** ffmpeg's
   RTSP output embeds it in the URL it's invoked with (`rtsp://publisher:
   PASS@127.0.0.1:8554/home`), which is unavoidable with ffmpeg's RTSP client

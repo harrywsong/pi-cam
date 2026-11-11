@@ -21,6 +21,7 @@ const stage = document.getElementById("stage");
 const statusEl = document.getElementById("view-status");
 
 let hls = null;
+let storedCreds = null; // set after login on the hls.js path only; native Safari path never collects credentials itself
 const nativeHlsSupport = player.canPlayType("application/vnd.apple.mpegurl") !== "";
 
 function showError(key) {
@@ -59,8 +60,16 @@ if (nativeHlsSupport) {
       return;
     }
 
+    storedCreds = { user, pass };
+
     hls = new window.Hls({
       lowLatencyMode: true,
+      // Catch back up to the live edge instead of drifting further behind
+      // it over time (the default behavior just keeps playing from
+      // wherever it started, so any stall/rebuffer accumulates forever).
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: 6,
+      maxLiveSyncPlaybackRate: 1.3,
       xhrSetup: (xhr) => {
         xhr.setRequestHeader("Authorization", "Basic " + btoa(`${user}:${pass}`));
       },
@@ -100,6 +109,27 @@ if (nativeHlsSupport) {
     hls.attachMedia(player);
   });
 }
+
+// --- Live-edge catch-up (belt and suspenders on top of hls.js's own
+// liveSync options above): if playback is more than a few seconds behind
+// the live edge — e.g. after the tab was backgrounded and throttled, or a
+// stall — jump forward instead of staying permanently delayed. ---
+
+const MAX_DRIFT_SECONDS = 4;
+
+setInterval(() => {
+  if (player.paused || player.seeking) return;
+  let liveEdge = null;
+  if (hls && hls.liveSyncPosition != null) {
+    liveEdge = hls.liveSyncPosition;
+  } else if (player.seekable && player.seekable.length > 0) {
+    liveEdge = player.seekable.end(player.seekable.length - 1);
+  }
+  if (liveEdge == null) return;
+  if (liveEdge - player.currentTime > MAX_DRIFT_SECONDS) {
+    player.currentTime = liveEdge - 0.5;
+  }
+}, 5000);
 
 function disconnect() {
   if (hls) {
@@ -304,3 +334,181 @@ function touchDist(touches) {
   const dy = touches[0].clientY - touches[1].clientY;
   return Math.hypot(dx, dy);
 }
+
+// --- Settings panel (mic / output device / input volume) ---
+
+const settingsToggle = document.getElementById("settings-toggle");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsClose = document.getElementById("settings-close");
+const micSelect = document.getElementById("mic-select");
+const outputSelect = document.getElementById("output-select");
+const outputDeviceRow = document.getElementById("output-device-row");
+const inputVolumeSlider = document.getElementById("input-volume");
+
+const outputSelectionSupported = typeof player.setSinkId === "function";
+if (outputSelectionSupported) outputDeviceRow.hidden = false;
+
+let devicesPopulated = false;
+
+async function populateDevices() {
+  try {
+    // Device labels are blank until a permission has been granted at least
+    // once; request+immediately release the mic just to unlock them.
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+    probe.getTracks().forEach((track) => track.stop());
+  } catch (_) {
+    // User may deny mic permission entirely — device list will just show
+    // generic labels, and push-to-talk will fail with a clear error later.
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+
+  micSelect.innerHTML = "";
+  devices
+    .filter((d) => d.kind === "audioinput")
+    .forEach((d, i) => {
+      const opt = document.createElement("option");
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Microphone ${i + 1}`;
+      micSelect.appendChild(opt);
+    });
+
+  if (outputSelectionSupported) {
+    outputSelect.innerHTML = "";
+    devices
+      .filter((d) => d.kind === "audiooutput")
+      .forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Output ${i + 1}`;
+        outputSelect.appendChild(opt);
+      });
+  }
+
+  devicesPopulated = true;
+}
+
+settingsToggle.addEventListener("click", async () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+  if (!settingsPanel.hidden && !devicesPopulated) await populateDevices();
+});
+settingsClose.addEventListener("click", () => {
+  settingsPanel.hidden = true;
+});
+
+outputSelect?.addEventListener("change", () => {
+  if (outputSelectionSupported) {
+    player.setSinkId(outputSelect.value).catch((err) => console.error("setSinkId failed", err));
+  }
+});
+
+// --- Push-to-talk ---
+//
+// Captures the selected mic through a Web Audio graph (so the input-volume
+// slider can apply real gain, not just mute/unmute), records it as Opus/
+// WebM, and streams chunks over a websocket to the Pi, which decodes and
+// plays it out through the Bose speaker. Browsers can't attach an
+// Authorization header to a WebSocket handshake, so a short-lived token is
+// fetched over a normal (header-capable) request first.
+
+const pttBtn = document.getElementById("push-to-talk");
+const talkBadge = document.getElementById("talk-badge");
+
+let micStream = null;
+let audioCtx = null;
+let gainNode = null;
+let micDest = null;
+let recorder = null;
+let talkSocket = null;
+
+async function ensureMicGraph() {
+  const deviceId = micSelect.value || undefined;
+  if (micStream) {
+    micStream.getTracks().forEach((track) => track.stop());
+  }
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+  });
+
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(micStream);
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = Number(inputVolumeSlider.value) / 100;
+  micDest = audioCtx.createMediaStreamDestination();
+  source.connect(gainNode).connect(micDest);
+}
+
+inputVolumeSlider.addEventListener("input", () => {
+  if (gainNode) gainNode.gain.value = Number(inputVolumeSlider.value) / 100;
+});
+
+async function fetchTalkToken() {
+  const headers = {};
+  if (storedCreds) {
+    headers.Authorization = "Basic " + btoa(`${storedCreds.user}:${storedCreds.pass}`);
+  }
+  // No stored creds (native Safari path): the browser will show its own
+  // native Basic Auth prompt here the first time, same as it already does
+  // for the video stream itself.
+  const resp = await fetch("/talk-token", { headers });
+  if (!resp.ok) throw new Error(`talk-token: ${resp.status}`);
+  const data = await resp.json();
+  return data.token;
+}
+
+async function startTalking() {
+  try {
+    await ensureMicGraph();
+    const token = await fetchTalkToken();
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    talkSocket = new WebSocket(`${proto}//${location.host}/talk-ws?token=${token}`);
+    talkSocket.binaryType = "arraybuffer";
+
+    await new Promise((resolve, reject) => {
+      talkSocket.addEventListener("open", resolve, { once: true });
+      talkSocket.addEventListener(
+        "error",
+        () => reject(new Error("talk-token socket error")),
+        { once: true }
+      );
+    });
+
+    recorder = new MediaRecorder(micDest.stream, { mimeType: "audio/webm;codecs=opus" });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0 && talkSocket && talkSocket.readyState === WebSocket.OPEN) {
+        e.data.arrayBuffer().then((buf) => talkSocket.send(buf));
+      }
+    };
+    recorder.start(250);
+
+    pttBtn.classList.add("active");
+    talkBadge.hidden = false;
+  } catch (err) {
+    console.error("push-to-talk failed to start", err);
+    statusEl.textContent = t(err && err.message && err.message.includes("talk-token") ? "talkError" : "micError");
+    stopTalking();
+  }
+}
+
+function stopTalking() {
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+  recorder = null;
+  if (talkSocket) {
+    try {
+      talkSocket.close();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  talkSocket = null;
+  pttBtn.classList.remove("active");
+  talkBadge.hidden = true;
+}
+
+pttBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  startTalking();
+});
+["pointerup", "pointerleave", "pointercancel"].forEach((evt) =>
+  pttBtn.addEventListener(evt, stopTalking)
+);

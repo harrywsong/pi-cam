@@ -1,0 +1,25 @@
+[Unit]
+Description=pi-cam speaker keep-alive tone (prevents Bose auto-power-off)
+After=sound.target
+
+[Service]
+# Portable/battery speakers (Bose Revolve etc.) auto-power-off after a few
+# minutes of silence. A continuous, very quiet, sub-audible tone keeps the
+# USB audio link "active" without being noticeable. Runs through the
+# "picam_speaker" dmix device (see /etc/asound.conf) so push-to-talk audio
+# can play at the same time instead of fighting for exclusive device access.
+ExecStart=/usr/bin/ffmpeg -hide_banner -loglevel warning \
+  -f lavfi -i sine=frequency=19:sample_rate=48000 \
+  -af volume=0.02 -ac 2 -f alsa picam_speaker
+Restart=always
+RestartSec=3
+User=picam
+Group=audio
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
