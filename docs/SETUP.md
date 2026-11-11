@@ -219,7 +219,10 @@ The camera and mic aren't running 24/7 — MediaMTX starts that capture the
 moment the page actually requests the stream, so the very first connect
 can take a couple of seconds longer than normal while it spins up (the
 viewer's own auto-reconnect logic covers this, no action needed), and it
-stops itself again about a minute after the last viewer disconnects.
+stops itself again about a minute after the last viewer disconnects. If
+you set up a speaker in step 3c, a short rising chime plays when a session
+starts and a lower/falling one when it ends — audible to anyone in the
+room regardless of whether they're looking at a screen.
 
 Both playback paths give you: live video, listen-in audio from the Pi's
 mic, digital pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom,

@@ -22,7 +22,7 @@ esac
 
 echo "==> Installing ffmpeg"
 apt-get update
-apt-get install -y ffmpeg nftables python3 python3-aiohttp python3-yaml alsa-utils
+apt-get install -y ffmpeg nftables python3 python3-aiohttp python3-yaml alsa-utils curl
 
 echo "==> Creating picam system user"
 id -u picam &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin -G video,audio picam
@@ -43,6 +43,11 @@ if [[ ! -f /etc/picam/mediamtx.yml ]]; then
 else
   echo "    -> /etc/picam/mediamtx.yml already exists, leaving it alone."
 fi
+echo "==> Installing MediaMTX on-demand hook scripts"
+cp "$(dirname "$0")/mediamtx-on-demand.sh" /etc/picam/mediamtx-on-demand.sh
+cp "$(dirname "$0")/mediamtx-on-undemand.sh" /etc/picam/mediamtx-on-undemand.sh
+chmod 750 /etc/picam/mediamtx-on-demand.sh /etc/picam/mediamtx-on-undemand.sh
+
 chown -R picam:picam /etc/picam
 chmod 750 /etc/picam
 
@@ -69,8 +74,8 @@ echo "  2. Create /etc/picam/ffmpeg.env with PICAM_PUBLISHER_PASS and PICAM_AUDI
 echo "  3. chmod 600 /etc/picam/ffmpeg.env && chown picam:picam /etc/picam/ffmpeg.env"
 echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find your"
 echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
-echo "  5. If you have a speaker for push-to-talk, set up /etc/asound.conf (see"
-echo "     docs/SETUP.md) with its ALSA card name"
+echo "  5. If you have a speaker for push-to-talk, see docs/SETUP.md step 3c"
+echo "     (PipeWire/loginctl linger setup — no /etc/asound.conf needed)"
 echo "  6. systemctl enable --now picam-firewall mediamtx picam-web picam-keepalive"
 echo "     (there is no picam-ffmpeg service to enable — mediamtx.yml's"
 echo "     runOnDemand starts/stops the webcam+mic capture itself, only"

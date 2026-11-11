@@ -82,8 +82,14 @@ drift (on top of the `-use_wallclock_as_timestamps` fix applied directly).
   credentials as MediaMTX (reads the sha256 hashes straight out of
   `mediamtx.yml` — one source of truth, not a second place for a password
   to go stale), and `/talk-ws` requires a short-lived, single-use token
-  fetched over `/talk-token` rather than ever taking a real password in a
-  URL/websocket. Keep `python3-aiohttp` updated along with everything else.
+  fetched over `/auth-token` rather than ever taking a real password in a
+  URL/websocket. `/play-tone` (the connect/disconnect chimes) is the one
+  endpoint with no auth at all — it's only ever called locally by
+  MediaMTX's own hook scripts (`scripts/mediamtx-on-demand.sh`/
+  `-on-undemand.sh`), can't be reached from outside the Pi (loopback-bound,
+  same as everything else here), and the worst it does is play a sound, so
+  that trade-off is deliberate, not an oversight. Keep `python3-aiohttp`
+  updated along with everything else.
 - **Push-to-talk audio plays on a real speaker in the room, unauthenticated
   beyond the same credential check as everything else.** Anyone with valid
   credentials can speak into the room at will. This is the same trust

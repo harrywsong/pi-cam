@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
 pi-cam web backend — replaces the plain `python3 -m http.server` used
-before push-to-talk existed. Serves the static viewer files and adds a
-websocket endpoint that decodes incoming mic audio (webm/opus from the
-browser's MediaRecorder) and plays it out through the Bose speaker.
+before push-to-talk existed. Serves the static viewer files and adds:
+
+- /talk-ws: decodes incoming mic audio (webm/opus from the browser's
+  MediaRecorder) and plays it out through the Bose speaker.
+- /play-tone: plays a short connect/disconnect chime. Called locally (over
+  loopback, no auth — see below) by MediaMTX's runOnDemand/runOnUnDemand
+  hooks (scripts/mediamtx-on-demand.sh, scripts/mediamtx-on-undemand.sh)
+  when a viewer's session starts/ends. It's here and not in those scripts
+  directly because they run as mediamtx's own unprivileged `picam` user,
+  which (like mediamtx itself) can't reach the PipeWire session that owns
+  the speaker — this process can, for the same reason push-to-talk needs
+  to run as the interactive login user (see docs/THREAT_MODEL.md).
+  No token/auth: it only ever plays a sound, bound to 127.0.0.1 same as
+  everything else here, and the hook scripts that call it have no way to
+  carry a browser-issued token anyway.
 
 (The webcam/mic capture itself runs on-demand — started/stopped by
 MediaMTX's own runOnDemand/runOnDemandCloseAfter, configured in
@@ -39,6 +51,26 @@ MEDIAMTX_CONF = "/etc/picam/mediamtx.yml"
 # systemd/picam-web.service for the PULSE_SERVER/XDG_RUNTIME_DIR env this
 # process needs (inherited by the ffmpeg subprocess below automatically).
 TOKEN_TTL_SECONDS = 30
+
+# Two deliberately different-shaped chimes: connect rises and is quick/bright
+# (two short high notes), disconnect falls and is slower/lower (two longer
+# low notes) — distinguishable by ear without having to listen closely.
+TONE_FILTERS = {
+    "connect": (
+        "[0:a]atrim=duration=0.12,asetpts=PTS-STARTPTS[a0];"
+        "[1:a]atrim=duration=0.18,asetpts=PTS-STARTPTS[a1];"
+        "[a0][a1]concat=n=2:v=0:a=1,volume=0.6[out]"
+    ),
+    "disconnect": (
+        "[0:a]atrim=duration=0.18,asetpts=PTS-STARTPTS[a0];"
+        "[1:a]atrim=duration=0.3,asetpts=PTS-STARTPTS[a1];"
+        "[a0][a1]concat=n=2:v=0:a=1,volume=0.6[out]"
+    ),
+}
+TONE_FREQUENCIES = {
+    "connect": (784, 1175),  # G5 -> D6, rising
+    "disconnect": (587, 392),  # D5 -> G4, falling
+}
 
 _tokens = {}  # token -> expiry epoch seconds
 
@@ -154,6 +186,44 @@ async def talk_ws(request):
     return ws
 
 
+async def play_tone(request):
+    kind = request.query.get("type", "")
+    if kind not in TONE_FILTERS:
+        return web.Response(status=400, text="type must be connect or disconnect")
+
+    f1, f2 = TONE_FREQUENCIES[kind]
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency={f1}:sample_rate=48000",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency={f2}:sample_rate=48000",
+        "-filter_complex",
+        TONE_FILTERS[kind],
+        "-map",
+        "[out]",
+        "-ac",
+        "2",
+        "-f",
+        "pulse",
+        "default",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=5)
+    except asyncio.TimeoutError:
+        proc.kill()
+    return web.Response(text="ok")
+
+
 async def index(request):
     return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
@@ -163,6 +233,7 @@ def build_app():
     app.router.add_get("/", index)
     app.router.add_get("/auth-token", auth_token)
     app.router.add_get("/talk-ws", talk_ws)
+    app.router.add_post("/play-tone", play_tone)
     app.router.add_static("/", STATIC_DIR, show_index=False)
     return app
 

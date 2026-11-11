@@ -19,7 +19,10 @@ install required on the viewer's side.
   last one leaves (native `runOnDemand`/`runOnDemandCloseAfter`, not a
   custom scheduler) — no permanently-recording webcam, less wear, and
   shorter sessions sidestep a long-session AV-sync drift issue that showed
-  up during testing.
+  up during testing. A short rising chime plays on the Bose speaker when a
+  session starts, and a distinctly lower/falling one when it ends — a clear
+  audible "you're on camera now" / "not anymore" signal for anyone in the
+  room, independent of whether they're looking at anything.
 - **Video + two-way audio.** The Logitech C920's built-in mic streams
   alongside video (listen-in), and a push-to-talk button lets a viewer
   speak into a USB speaker on the Pi (`web/server.py`, a small backend that
@@ -76,8 +79,11 @@ the hardening checklist there (strong unique passwords are non-negotiable).
 - `systemd/` — systemd unit files for MediaMTX, the web viewer, the
   keep-alive tone, and the firewall reapply-on-boot unit (the webcam/mic
   capture itself has no unit of its own — see `mediamtx.yml`'s `runOnDemand`).
-- `scripts/` — install/firewall/Funnel helper scripts to run on the Pi.
+- `scripts/` — install/firewall/Funnel helper scripts to run on the Pi, plus
+  the two MediaMTX on-demand hook scripts (connect/disconnect chimes +
+  starting the actual capture command).
 - `web/` — viewer page (login, HLS player, pan/zoom, settings, push-to-talk)
-  and `server.py`, the backend that serves it and handles push-to-talk audio.
+  and `server.py`, the backend that serves it and handles push-to-talk audio
+  and the connect/disconnect chimes.
 
 Start with `docs/SETUP.md`.
