@@ -5,17 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pi-cam</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 </head>
 <body>
   <div id="login-screen" class="screen">
     <form id="login-form">
       <h1>pi-cam</h1>
-      <p class="hint">Credentials are the same ones you were given for the
-        MediaMTX stream. They stay in this browser tab only.</p>
+      <p class="hint">Use the username/password you were given. They're kept
+        in this browser tab only (cleared when you close it).</p>
       <label>Username <input id="login-user" autocomplete="username" required></label>
       <label>Password <input id="login-pass" type="password" autocomplete="current-password" required></label>
-      <label>MediaMTX host <small>(e.g. 100.x.x.x:8889)</small>
-        <input id="login-host" placeholder="pi-tailscale-ip:8889" required></label>
       <button type="submit">Connect</button>
       <p id="login-error" class="error" hidden></p>
     </form>

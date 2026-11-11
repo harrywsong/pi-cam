@@ -2,60 +2,37 @@
 
 Read `docs/THREAT_MODEL.md` first so the "why" behind each step makes sense.
 
+Only the **Pi** needs Tailscale installed. The two viewers just open a URL
+in any normal browser on desktop or mobile — no app to install on their
+side. Public reachability is via Tailscale Funnel; the only thing actually
+gating access is the username/password each person has.
+
 ## 0. Prerequisites
 
 - Raspberry Pi (any model with a USB port) running Raspberry Pi OS (or any
   Debian-based distro), with the webcam plugged in.
-- Two people, each with their own device(s) (phone/laptop) that can run the
-  Tailscale app.
 - Confirm the webcam shows up: `v4l2-ctl --list-devices` and
   `v4l2-ctl --device=/dev/video0 --list-formats-ext` (install `v4l-utils` if
   missing: `sudo apt install v4l-utils`). Note the device path (usually
   `/dev/video0`) and a supported resolution/framerate — adjust
   `systemd/picam-ffmpeg.service` if yours differs from 1280x720@15.
 
-## 1. Install Tailscale on the Pi and both viewers' devices
-
-On the Pi:
+## 1. Install Tailscale on the Pi only
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 ```
 
-Follow the printed login URL to associate the Pi with your tailnet. Do the
-same (install the Tailscale app, sign in) on each of the two people's
-phones/laptops — they need to use the **same tailnet** (e.g. invite them as
-shared users, or add their accounts, depending on how your tailnet is
-organized).
+Follow the printed login URL to associate the Pi with your tailnet. In the
+Tailscale admin console (https://login.tailscale.com/admin):
 
-In the Tailscale admin console (https://login.tailscale.com/admin):
-
-- **Settings → Device management**: turn on "require re-authentication" and
-  "device approval" so a stolen/reused login can't silently add a device.
-- **Access controls (ACLs)**: scope things down so only the two people's
-  devices/tags can reach the Pi's node. Example ACL snippet (adapt tags/users
-  to your actual tailnet):
-
-  ```json
-  {
-    "acls": [
-      {
-        "action": "accept",
-        "src": ["user1@example.com", "user2@example.com"],
-        "dst": ["tag:picam:8888,8889"]
-      }
-    ],
-    "tagOwners": {
-      "tag:picam": ["user1@example.com"]
-    }
-  }
-  ```
-
-  Then tag the Pi's device: `sudo tailscale up --advertise-tags=tag:picam`.
-
-This step is what actually enforces "only two people" at the network level —
-everything else is defense in depth on top of it.
+- **DNS → HTTPS Certificates**: turn this on (required for Funnel's
+  automatic TLS certs).
+- **Access controls**: make sure Funnel is allowed for this node. A default
+  ACL usually already permits it; if `scripts/tailscale-funnel.sh` later
+  complains about Funnel not being enabled, it'll tell you which ACL
+  attribute to add.
 
 ## 2. Run the installer
 
@@ -88,8 +65,8 @@ sudo systemctl daemon-reload
 
 ## 3b. Pick your microphone
 
-The C920 (and most webcams) has a built-in mic, which is what `PICAM_AUDIO_DEVICE`
-should normally point at. Find its ALSA device name:
+The C920 (and most webcams) has a built-in mic, which is what
+`PICAM_AUDIO_DEVICE` should normally point at. Find its ALSA device name:
 
 ```bash
 arecord -l
@@ -112,10 +89,13 @@ printf 'the-actual-password' | sha256sum | awk '{print $1}'
 
 Put `sha256:<hash>` into `/etc/picam/mediamtx.yml` for `person1` and
 `person2`, and a third one for `publisher` (the ffmpeg capture process).
-Pick three distinct, strong, random passwords — a password manager's
-generator is fine. **Never commit real hashes or passwords to this repo** —
-`mediamtx.yml` in this repo is a template with placeholders only; the real
-one lives at `/etc/picam/mediamtx.yml` on the Pi, outside git.
+**Pick long, random, unique passwords** — this is now the entire access
+control, since the stream is reachable from the public internet via Funnel,
+not just from a private tailnet. A password manager's generator is strongly
+recommended over anything memorable. **Never commit real hashes or
+passwords to this repo** — `mediamtx.yml` in this repo is a template with
+placeholders only; the real one lives at `/etc/picam/mediamtx.yml` on the
+Pi, outside git.
 
 Then create the ffmpeg publisher's env file:
 
@@ -136,9 +116,10 @@ sudo nft list ruleset > /etc/nftables.conf
 sudo systemctl enable nftables
 ```
 
-Verify nothing is reachable from outside the tailnet by trying to hit
-`http://<pi-tailscale-ip>:8888` from a device **not** on the tailnet (e.g.
-your phone with Tailscale off, or mobile data) — it should simply time out.
+This is defense in depth — `mediamtx.yml` and `picam-web.service` already
+bind everything to `127.0.0.1`, so nothing is reachable from the LAN or
+internet directly regardless. The only path in is Tailscale Funnel's own
+local reverse proxy (next step).
 
 ## 6. Start everything
 
@@ -152,37 +133,43 @@ sudo systemctl status mediamtx picam-ffmpeg picam-web
 Check logs if something's wrong: `journalctl -u mediamtx -f`,
 `journalctl -u picam-ffmpeg -f`, `journalctl -u picam-web -f`.
 
-## 7. View the feed
+## 7. Expose it publicly with Tailscale Funnel
 
-Find the Pi's Tailscale IP: `tailscale ip -4` (run on the Pi), or look it up
-in the admin console. From a device on the tailnet:
+```bash
+sudo ./scripts/tailscale-funnel.sh
+```
 
-- **Custom viewer (recommended):** `http://<pi-tailscale-ip>:8080` — the
-  page in `web/`. Enter your `person1`/`person2` username/password and the
-  MediaMTX host (`<pi-tailscale-ip>:8889`) once; it's kept in that browser
-  tab's `sessionStorage` only. Gives you audio (listen-in from the Pi's mic)
-  and a digital pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom,
-  ⤾ to reset) — this crops into the fixed camera frame in software, it
-  doesn't move the camera, since the C920 has no motorized PTZ.
-- **WebRTC (MediaMTX's own page):**
-  `http://<pi-tailscale-ip>:8889/home` — built-in WHEP web player, basic-auth
-  prompt for credentials. No pan/zoom controls.
-- **HLS (fallback, works everywhere incl. older Safari/iOS):**
-  `http://<pi-tailscale-ip>:8888/home/index.m3u8` with the same credentials
-  via basic auth, or open `http://<pi-tailscale-ip>:8888/home` for the
-  built-in HLS player page.
+This maps your Pi's `https://<name>.<tailnet>.ts.net` hostname to the web
+viewer (`/`) and MediaMTX's HLS output (`/home`), and turns Funnel on. See
+the script's comments if `tailscale funnel` refuses to enable — it'll name
+the missing admin-console setting.
 
-Bookmark the custom viewer on each person's device. Since it's only
-reachable over Tailscale, make sure Tailscale is running on the viewing
-device before the link will load.
+## 8. View the feed
+
+Share `https://<name>.<tailnet>.ts.net/` (find the exact hostname with
+`tailscale status` on the Pi) with the two people, along with their
+`person1`/`person2` username/password. From any browser, desktop or
+mobile, no app install required:
+
+- Open the URL. On Chrome/Firefox/Edge/Android, you'll get the custom
+  viewer's login form (`web/`) — enter the username/password once, kept
+  only in that browser tab's `sessionStorage`.
+- On Safari/iOS, the page skips the form and the browser itself will pop up
+  its native login dialog the first time it needs credentials (a `<video>`
+  element can't attach custom headers, so this is the reliable path there).
+
+Both give you: live video, listen-in audio from the Pi's mic, and digital
+pan/zoom (drag to pan once zoomed in, scroll/pinch to zoom, ⤾ to reset) —
+this crops into the fixed camera frame in software, it doesn't move the
+camera, since the C920 has no motorized PTZ.
+
+Bookmark the URL on each person's device/home screen.
 
 ## Optional: self-hosted control plane (Headscale)
 
 If you don't want to trust Tailscale's hosted coordination server at all,
 [Headscale](https://github.com/juanfont/headscale) is an open-source,
-self-hosted, API-compatible replacement you can run on a machine you
-control. The Pi/viewer-side `tailscale` client works unmodified — you just
-point it at your Headscale server instead of `login.tailscale.com`. This is
-a meaningfully bigger operational lift (you now run and patch another
-internet-facing service), so only go this route if that trust boundary
-specifically matters to you.
+self-hosted, API-compatible replacement for the Pi's own `tailscale` client
+to point at. Note Headscale does not support Funnel, though — you'd need a
+different way to expose the stream publicly (your own reverse proxy +
+DDNS + Let's Encrypt), which is a meaningfully bigger operational lift.

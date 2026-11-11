@@ -8,31 +8,32 @@
 ###############################################################################
 
 # --- Network binding -----------------------------------------------------
-# RTSP is only used by ffmpeg to publish the local webcam feed, so it's
-# bound to localhost only — not reachable even on the tailnet.
-# WebRTC/HLS (what viewers actually use) bind to all interfaces, but the OS
-# firewall (see scripts/firewall.sh) only allows the Tailscale subnet
-# (100.64.0.0/10) through on those ports. Binding to all interfaces + a
-# firewall rule is more robust than binding to a literal tailscale0 IP,
-# which can change across re-registrations.
+# Nothing here is meant to be reachable directly, from the LAN or the
+# tailnet or anywhere else — every address is bound to loopback only. The
+# ONLY way in is through Tailscale Funnel, which runs as a local reverse
+# proxy on the Pi and connects to these ports over 127.0.0.1 (see
+# scripts/tailscale-funnel.sh). scripts/firewall.sh adds a belt-and-suspenders
+# nftables rule to drop any external packets to these ports too, in case of
+# a binding misconfiguration.
+#
+# Viewer-facing playback is HLS, not WebRTC: Funnel proxies plain HTTPS, and
+# WebRTC's UDP media (ICE) can't ride through that without a public TURN
+# relay. HLS runs entirely over HTTPS so it works through Funnel with no
+# extra infrastructure, at the cost of a couple seconds of latency.
 rtspAddress: 127.0.0.1:8554
-webrtcAddress: :8889
-hlsAddress: :8888
-apiAddress: :9997
-metricsAddress: :9998
+webrtcAddress: 127.0.0.1:8889
+hlsAddress: 127.0.0.1:8888
+apiAddress: 127.0.0.1:9997
+metricsAddress: 127.0.0.1:9998
 
 rtsp: yes            # localhost-only, used solely for ffmpeg to publish
 rtmp: no
 srt: no
-hls: yes             # simple fallback viewer (works in any browser/Safari)
-webrtc: yes          # best latency, used by the MediaMTX WebRTC web player
+hls: yes             # primary viewer path, proxied out via Tailscale Funnel
+hlsVariant: mpegts    # classic TS segments — broadest compatibility (Safari/iOS native HLS + hls.js everywhere else)
+webrtc: no           # disabled: not reachable through Funnel without a TURN relay (see note above)
 api: no              # leave off unless you need the HTTP control API
 metrics: no
-
-# The custom viewer page (web/) is served from a different port
-# (picam-web.service) and calls the WHEP endpoint here via browser fetch,
-# so it needs cross-origin access. Still tailnet-only — see scripts/firewall.sh.
-webrtcAllowOrigin: '*'
 
 # --- Authentication --------------------------------------------------------
 authMethod: internal
@@ -47,8 +48,6 @@ authInternalUsers:
     permissions:
       - action: read
         path: home
-      - action: playback
-        path: home
 
   # Person 2
   - user: person2
@@ -56,8 +55,6 @@ authInternalUsers:
     ips: []
     permissions:
       - action: read
-        path: home
-      - action: playback
         path: home
 
   # The capture process (ffmpeg) publishing the stream from the webcam.

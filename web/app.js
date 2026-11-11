@@ -1,9 +1,16 @@
-// pi-cam custom viewer: WHEP playback + client-side digital pan/zoom.
-// Credentials live only in sessionStorage (cleared when the tab closes) and
-// are sent straight to MediaMTX's WHEP endpoint via a Basic Auth header —
-// there is no backend here, this page is static files only.
+// pi-cam custom viewer: HLS playback (served same-origin via Tailscale
+// Funnel) + client-side digital pan/zoom.
+//
+// Two playback paths:
+//  - Safari/iOS (native HLS support): just point <video> at the stream and
+//    let the browser's own HTTP Basic Auth dialog handle credentials — a
+//    <video> element can't attach custom headers, so this is the only
+//    reliable way to authenticate there.
+//  - Everything else (Chrome/Firefox/Edge, desktop and Android): use hls.js,
+//    which lets us attach an Authorization header built from the login form
+//    so there's one consistent UI.
 
-const STREAM_PATH = "home"; // must match the path name in mediamtx.yml
+const STREAM_URL = "/home/index.m3u8"; // same-origin: MediaMTX HLS, proxied by Tailscale Funnel
 
 const loginScreen = document.getElementById("login-screen");
 const viewScreen = document.getElementById("view-screen");
@@ -13,122 +20,75 @@ const player = document.getElementById("player");
 const stage = document.getElementById("stage");
 const statusEl = document.getElementById("view-status");
 
-let pc = null;
-let whepResourceUrl = null;
+let hls = null;
+const nativeHlsSupport = player.canPlayType("application/vnd.apple.mpegurl") !== "";
 
-function creds() {
-  return {
-    user: sessionStorage.getItem("picam_user"),
-    pass: sessionStorage.getItem("picam_pass"),
-    host: sessionStorage.getItem("picam_host"),
-  };
-}
+if (nativeHlsSupport) {
+  // Safari/iOS: skip our login form entirely. The browser will show its own
+  // native username/password prompt the first time it hits a 401.
+  loginScreen.hidden = true;
+  viewScreen.hidden = false;
+  statusEl.textContent = "If prompted, enter your pi-cam username/password.";
+  player.src = STREAM_URL;
+} else {
+  loginForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    loginError.hidden = true;
+    const user = document.getElementById("login-user").value.trim();
+    const pass = document.getElementById("login-pass").value;
 
-function authHeader({ user, pass }) {
-  return "Basic " + btoa(`${user}:${pass}`);
-}
-
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  loginError.hidden = true;
-  const user = document.getElementById("login-user").value.trim();
-  const pass = document.getElementById("login-pass").value;
-  const host = document.getElementById("login-host").value.trim().replace(/\/$/, "");
-
-  sessionStorage.setItem("picam_user", user);
-  sessionStorage.setItem("picam_pass", pass);
-  sessionStorage.setItem("picam_host", host);
-
-  try {
-    await connect();
-    loginScreen.hidden = true;
-    viewScreen.hidden = false;
-  } catch (err) {
-    loginError.textContent = err.message || "Failed to connect";
-    loginError.hidden = false;
-  }
-});
-
-async function connect() {
-  const { user, pass, host } = creds();
-  if (!user || !pass || !host) throw new Error("Missing credentials");
-
-  pc = new RTCPeerConnection();
-  pc.addTransceiver("video", { direction: "recvonly" });
-  pc.addTransceiver("audio", { direction: "recvonly" });
-
-  const remoteStream = new MediaStream();
-  pc.ontrack = (ev) => {
-    remoteStream.addTrack(ev.track);
-    player.srcObject = remoteStream;
-  };
-
-  pc.onconnectionstatechange = () => {
-    statusEl.textContent = `connection: ${pc.connectionState}`;
-    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
-      statusEl.textContent += " — reload the page to retry";
+    if (!window.Hls || !window.Hls.isSupported()) {
+      loginError.textContent = "This browser can't play HLS. Try Safari or Chrome.";
+      loginError.hidden = false;
+      return;
     }
-  };
 
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await waitForIceGatheringComplete(pc);
+    hls = new window.Hls({
+      xhrSetup: (xhr) => {
+        xhr.setRequestHeader("Authorization", "Basic " + btoa(`${user}:${pass}`));
+      },
+    });
 
-  const url = `http://${host}/${STREAM_PATH}/whep`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/sdp",
-      Authorization: authHeader({ user, pass }),
-    },
-    body: pc.localDescription.sdp,
-  });
-
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      throw new Error("Wrong username/password");
-    }
-    throw new Error(`Server returned ${resp.status}`);
-  }
-
-  whepResourceUrl = resp.headers.get("Location")
-    ? new URL(resp.headers.get("Location"), url).toString()
-    : null;
-
-  const answerSdp = await resp.text();
-  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
-}
-
-function waitForIceGatheringComplete(pc) {
-  if (pc.iceGatheringState === "complete") return Promise.resolve();
-  return new Promise((resolve) => {
-    function check() {
-      if (pc.iceGatheringState === "complete") {
-        pc.removeEventListener("icegatheringstatechange", check);
-        resolve();
+    hls.on(window.Hls.Events.ERROR, (_evt, data) => {
+      if (data.fatal) {
+        if (data.response && (data.response.code === 401 || data.response.code === 403)) {
+          loginError.textContent = "Wrong username/password";
+        } else {
+          loginError.textContent = "Playback error — see console";
+          console.error("hls.js fatal error", data);
+        }
+        loginError.hidden = false;
+        hls.destroy();
+        hls = null;
+        viewScreen.hidden = true;
+        loginScreen.hidden = false;
       }
-    }
-    pc.addEventListener("icegatheringstatechange", check);
+    });
+
+    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+      loginScreen.hidden = true;
+      viewScreen.hidden = false;
+      statusEl.textContent = "";
+      player.play().catch(() => {
+        statusEl.textContent = "Tap the video to start playback";
+      });
+    });
+
+    hls.loadSource(STREAM_URL);
+    hls.attachMedia(player);
   });
 }
 
-async function disconnect() {
-  if (whepResourceUrl) {
-    try {
-      await fetch(whepResourceUrl, {
-        method: "DELETE",
-        headers: { Authorization: authHeader(creds()) },
-      });
-    } catch (_) {
-      // best-effort cleanup
-    }
+function disconnect() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
   }
-  if (pc) pc.close();
-  pc = null;
-  whepResourceUrl = null;
-  player.srcObject = null;
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
   viewScreen.hidden = true;
-  loginScreen.hidden = false;
+  if (!nativeHlsSupport) loginScreen.hidden = false;
 }
 
 document.getElementById("disconnect").addEventListener("click", disconnect);
@@ -243,6 +203,3 @@ function touchDist(touches) {
   const dy = touches[0].clientY - touches[1].clientY;
   return Math.hypot(dx, dy);
 }
-
-// Auto-reconnect if a previous session's creds are already saved (optional
-// convenience; comment out if you'd rather always re-enter credentials).

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # pi-cam install script — run on the Raspberry Pi as root (sudo).
 # Installs ffmpeg + MediaMTX, lays out config/service files, and creates the
-# dedicated system user. Does NOT install/configure Tailscale (do that
-# first — see docs/SETUP.md step 1) and does NOT generate your password
+# dedicated system user. Does NOT install/configure Tailscale or Funnel (do
+# that first/after — see docs/SETUP.md) and does NOT generate your password
 # hashes (step 4 in docs/SETUP.md — interactive on purpose).
 
 set -euo pipefail
@@ -66,3 +66,4 @@ echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find
 echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
 echo "  5. Run scripts/firewall.sh"
 echo "  6. systemctl enable --now mediamtx picam-ffmpeg picam-web"
+echo "  7. Run scripts/tailscale-funnel.sh to expose it publicly"

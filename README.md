@@ -1,11 +1,14 @@
 # pi-cam
 
-A private, two-person home camera feed off a webcam plugged into a Raspberry Pi.
+A private, two-person home camera feed off a webcam plugged into a
+Raspberry Pi — viewable from any browser, desktop or mobile, with no app
+install required on the viewer's side.
 
 ## Goals
 
 - Only two specific people can ever view (and listen to) the feed.
-- No ports exposed to the public internet, ever.
+- Viewers need nothing but a browser — no app, no VPN client, no Tailscale
+  account of their own.
 - Credentials are per-person, not shared.
 - Survives reboots and crashes without manual intervention.
 
@@ -17,36 +20,32 @@ A private, two-person home camera feed off a webcam plugged into a Raspberry Pi.
   independently crop/zoom into the frame client-side (drag to pan, scroll or
   pinch to zoom). This is software-only: the C920 has no motorized PTZ, so
   the camera itself never physically moves.
-- **Custom viewer page**, served alongside MediaMTX's own built-in WebRTC/HLS
-  pages, which still work as a fallback.
+- **Works on desktop and mobile** out of the box: hls.js on Chrome/Firefox/
+  Edge/Android, native HLS playback + the browser's own login prompt on
+  Safari/iOS.
 
 ## Architecture
 
 ```
-Webcam+mic --(v4l2+alsa)--> ffmpeg --(RTSP push, H264+Opus)--> MediaMTX --(WebRTC/HLS, authenticated)--> Tailscale --> your devices
-                                                                   ^
-                                                     web/ (static viewer: login, player, pan/zoom)
+Webcam+mic --(v4l2+alsa)--> ffmpeg --(RTSP, H264+AAC)--> MediaMTX (HLS, auth)
+                                                               |
+                                                     127.0.0.1-only ports
+                                                               |
+                                                  Tailscale Funnel (local proxy)
+                                                               |
+                                                   https://<pi>.ts.net  <-- any browser
 ```
 
-Two layers of access control, not one:
+Only the **Pi** runs Tailscale. [Tailscale Funnel](https://tailscale.com/kb/1223/tailscale-funnel)
+turns that into a public `https://<name>.<tailnet>.ts.net` URL — automatic
+TLS, no router port-forwarding, no DDNS to manage — and reverse-proxies it
+to services that are themselves bound to `127.0.0.1` only. Viewers never
+join the tailnet; they just open the URL.
 
-1. **Network layer — Tailscale.** The Pi only listens on its Tailscale
-   (`tailscale0`) interface, never on its LAN/public interface. Tailscale is a
-   WireGuard mesh VPN with identity-based ACLs — only devices you've
-   explicitly authorized into the tailnet can reach the Pi at all. There is
-   no port-forwarding on your router and nothing is reachable from the open
-   internet. This is the single biggest security win here: an attacker who
-   doesn't have a signed-in device in your tailnet cannot even send a packet
-   to the stream port.
-2. **Application layer — MediaMTX auth.** Even inside the tailnet, MediaMTX
-   requires a username/password per stream path. Each of the two people gets
-   their own bcrypt-hashed credential, so you can tell them apart in logs and
-   revoke one without touching the other.
-
-Why not just port-forward + HTTPS + basic auth? That's strictly weaker: it
-puts a listening service on the public internet where it's scanned and
-attacked constantly, and a single leaked password is enough. Tailscale
-removes that entire attack surface.
+Because the stream is now reachable from the public internet (not gated by
+tailnet membership), **credentials are the entire access control**. See
+`docs/THREAT_MODEL.md` for what that does and doesn't protect against, and
+the hardening checklist there (strong unique passwords are non-negotiable).
 
 ## Repo layout
 
@@ -54,7 +53,7 @@ removes that entire attack surface.
 - `docs/THREAT_MODEL.md` — what this does and doesn't protect against.
 - `mediamtx/mediamtx.yml` — MediaMTX config template (auth, paths, bind address).
 - `systemd/` — systemd unit files for the capture, MediaMTX, and web viewer.
-- `scripts/` — install/helper scripts to run on the Pi.
-- `web/` — static custom viewer page (login, WebRTC player, pan/zoom controls).
+- `scripts/` — install/firewall/Funnel helper scripts to run on the Pi.
+- `web/` — static custom viewer page (login, HLS player, pan/zoom controls).
 
 Start with `docs/SETUP.md`.
