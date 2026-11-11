@@ -60,6 +60,15 @@ feed.** Read this whole page before deploying.
 - **Digital pan/zoom is purely client-side.** It only crops the decoded
   video in the viewer's own browser; it doesn't change what's captured or
   sent, and one viewer's pan/zoom never affects another's. No new surface.
+- **The `publisher` password is visible locally via `ps`/`/proc`.** ffmpeg's
+  RTSP output embeds it in the URL it's invoked with (`rtsp://publisher:
+  PASS@127.0.0.1:8554/home`), which is unavoidable with ffmpeg's RTSP client
+  — there's no out-of-band credential option. This only matters to local
+  root on the Pi (who already has full access anyway), never to anything
+  over the network, and it's a separate, publish-only credential from the
+  two viewer passwords, so it doesn't widen the public-facing surface.
+  Avoid running `systemctl status`/`ps` for this unit somewhere it might be
+  logged or screen-shared.
 
 ## If you want the stronger, tailnet-only alternative
 

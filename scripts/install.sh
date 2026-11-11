@@ -51,10 +51,15 @@ mkdir -p /etc/picam/web
 cp "$(dirname "$0")/../web/"*.html "$(dirname "$0")/../web/"*.js "$(dirname "$0")/../web/"*.css /etc/picam/web/
 chown -R picam:picam /etc/picam/web
 
+echo "==> Copying firewall script to /etc/picam (so picam-firewall.service has a stable path)"
+cp "$(dirname "$0")/firewall.sh" /etc/picam/firewall.sh
+chmod 750 /etc/picam/firewall.sh
+
 echo "==> Installing systemd units"
 cp "$(dirname "$0")/../systemd/mediamtx.service" /etc/systemd/system/mediamtx.service
 cp "$(dirname "$0")/../systemd/picam-ffmpeg.service" /etc/systemd/system/picam-ffmpeg.service
 cp "$(dirname "$0")/../systemd/picam-web.service" /etc/systemd/system/picam-web.service
+cp "$(dirname "$0")/../systemd/picam-firewall.service" /etc/systemd/system/picam-firewall.service
 systemctl daemon-reload
 
 echo ""
@@ -64,6 +69,5 @@ echo "  2. Create /etc/picam/ffmpeg.env with PICAM_PUBLISHER_PASS and PICAM_AUDI
 echo "  3. chmod 600 /etc/picam/ffmpeg.env && chown picam:picam /etc/picam/ffmpeg.env"
 echo "  4. Confirm /dev/video0 is your webcam (v4l2-ctl --list-devices) and find your"
 echo "     mic with 'arecord -l' for PICAM_AUDIO_DEVICE"
-echo "  5. Run scripts/firewall.sh"
-echo "  6. systemctl enable --now mediamtx picam-ffmpeg picam-web"
-echo "  7. Run scripts/tailscale-funnel.sh to expose it publicly"
+echo "  5. systemctl enable --now picam-firewall mediamtx picam-ffmpeg picam-web"
+echo "  6. Run scripts/tailscale-funnel.sh to expose it publicly"

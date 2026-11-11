@@ -17,14 +17,17 @@
 
 set -euo pipefail
 
-echo "==> Mapping / -> web viewer (127.0.0.1:8080)"
-tailscale serve --bg --https=443 / http://127.0.0.1:8080
+# `tailscale funnel <target>` both configures the route AND makes it public
+# in current CLI versions (serve + funnel are no longer separate on/off
+# toggles for the same route) — run funnel directly for each path rather
+# than `serve` followed by a bare `funnel 443 on`, which treats a bare port
+# number as its own (wrong) proxy target and clobbers the "/" route.
 
-echo "==> Mapping /home -> MediaMTX HLS output (127.0.0.1:8888)"
-tailscale serve --bg --https=443 /home http://127.0.0.1:8888/home
+echo "==> Mapping / -> web viewer (127.0.0.1:8080), public via Funnel"
+tailscale funnel --bg --https=443 --set-path=/ http://127.0.0.1:8080
 
-echo "==> Enabling Funnel on 443"
-tailscale funnel --bg 443 on
+echo "==> Mapping /home -> MediaMTX HLS output (127.0.0.1:8888), public via Funnel"
+tailscale funnel --bg --https=443 --set-path=/home http://127.0.0.1:8888/home
 
 echo ""
 echo "Current serve/funnel config:"

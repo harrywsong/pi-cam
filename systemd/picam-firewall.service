@@ -1,0 +1,15 @@
+[Unit]
+Description=pi-cam nftables rules (picam table only, idempotent)
+After=network.target tailscaled.service
+Wants=network.target
+
+[Service]
+# Only ever touches its own "inet picam" nftables table — safe to rerun on
+# every boot, unlike snapshotting the whole system ruleset (which would
+# freeze a stale copy of rules Tailscale/Docker/etc. manage themselves).
+Type=oneshot
+ExecStart=/bin/bash /etc/picam/firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

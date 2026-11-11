@@ -15,7 +15,7 @@ gating access is the username/password each person has.
   `v4l2-ctl --device=/dev/video0 --list-formats-ext` (install `v4l-utils` if
   missing: `sudo apt install v4l-utils`). Note the device path (usually
   `/dev/video0`) and a supported resolution/framerate — adjust
-  `systemd/picam-ffmpeg.service` if yours differs from 1280x720@15.
+  `systemd/picam-ffmpeg.service` if yours differs from 1920x1080@30 MJPEG.
 
 ## 1. Install Tailscale on the Pi only
 
@@ -55,8 +55,9 @@ v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
 Edit `systemd/picam-ffmpeg.service`'s `ExecStart` line if your device isn't
-MJPEG 1280x720@15 (e.g. switch `-input_format mjpeg` to `-input_format
-yuyv422` if that's what it reports, and adjust resolution/framerate). Then:
+MJPEG 1920x1080@30 (e.g. switch `-input_format mjpeg` to `-input_format
+yuyv422` if that's what it reports, and adjust resolution/framerate — drop
+`-b:v`/`-maxrate`/`-bufsize` proportionally for a lower resolution). Then:
 
 ```bash
 sudo cp systemd/picam-ffmpeg.service /etc/systemd/system/
@@ -80,11 +81,13 @@ there's no talk-back path.
 
 ## 4. Generate credentials (one per person)
 
-MediaMTX's `internal` auth method accepts a sha256 hash of the password.
-Generate one per person (do this locally, not pasted into chat/repo):
+MediaMTX's `internal` auth method accepts a sha256 hash of the password —
+but it must be the **base64-encoded** digest, not hex (`sha256sum`'s default
+output). Using hex will silently fail auth with a 401. Generate one per
+person (do this locally, not pasted into chat/repo):
 
 ```bash
-printf 'the-actual-password' | sha256sum | awk '{print $1}'
+printf 'the-actual-password' | openssl dgst -sha256 -binary | base64
 ```
 
 Put `sha256:<hash>` into `/etc/picam/mediamtx.yml` for `person1` and
@@ -111,15 +114,23 @@ sudo chown picam:picam /etc/picam/ffmpeg.env /etc/picam/mediamtx.yml
 ## 5. Lock down the firewall
 
 ```bash
-sudo ./scripts/firewall.sh
-sudo nft list ruleset > /etc/nftables.conf
-sudo systemctl enable nftables
+sudo systemctl enable --now picam-firewall
 ```
 
 This is defense in depth — `mediamtx.yml` and `picam-web.service` already
 bind everything to `127.0.0.1`, so nothing is reachable from the LAN or
 internet directly regardless. The only path in is Tailscale Funnel's own
 local reverse proxy (next step).
+
+**Don't** persist this with `nft list ruleset > /etc/nftables.conf` — on a
+Pi that's already running Tailscale (or Docker, or anything else that
+manages its own iptables/nftables rules), that command snapshots *all*
+currently-loaded tables, including ones those services recreate themselves
+on every boot (e.g. Tailscale's own `ts-input`/`ts-forward` chains), and
+freezing a stale copy of those into a static boot-time file can conflict
+with what they set up fresh at startup. `picam-firewall.service` avoids
+that: it only ever (re)applies `firewall.sh`'s own `inet picam` table on
+boot, never anyone else's rules.
 
 ## 6. Start everything
 
