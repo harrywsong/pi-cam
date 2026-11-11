@@ -34,6 +34,13 @@ function enterViewer() {
   viewScreen.hidden = false;
 }
 
+const MAX_AUTO_RECOVERIES = 6; // per playback session; a transient server-side
+// hiccup (a dropped segment, a brief encoder stall) shouldn't force a manual
+// reload — only give up and ask for one after several recoveries in a row
+// still aren't sticking.
+let nativeRecoveryCount = 0;
+let nativeRecoveryTimer = null;
+
 if (nativeHlsSupport) {
   // Safari/iOS: skip our login form entirely. The browser will show its own
   // native username/password prompt the first time it hits a 401.
@@ -41,9 +48,21 @@ if (nativeHlsSupport) {
   statusEl.textContent = t("nativePrompt");
   player.addEventListener("loadeddata", () => {
     statusEl.textContent = "";
+    nativeRecoveryCount = 0; // played successfully, reset the budget
   });
   player.addEventListener("error", () => {
-    statusEl.textContent = t("reconnectHint");
+    if (nativeRecoveryCount >= MAX_AUTO_RECOVERIES) {
+      statusEl.textContent = t("reconnectHint");
+      return;
+    }
+    nativeRecoveryCount += 1;
+    statusEl.textContent = t("connecting");
+    clearTimeout(nativeRecoveryTimer);
+    nativeRecoveryTimer = setTimeout(() => {
+      player.src = STREAM_URL;
+      player.load();
+      player.play().catch(() => {});
+    }, 2000);
   });
   player.src = STREAM_URL;
 } else {
@@ -75,20 +94,46 @@ if (nativeHlsSupport) {
       },
     });
 
+    let hlsRecoveryCount = 0;
+
+    function giveUp(key, logData) {
+      showError(key);
+      if (logData) console.error("hls.js fatal error", logData);
+      hls.destroy();
+      hls = null;
+      viewScreen.hidden = true;
+      loginScreen.hidden = false;
+      loginForm.querySelector("button").disabled = false;
+    }
+
     hls.on(window.Hls.Events.ERROR, (_evt, data) => {
-      if (data.fatal) {
-        if (data.response && (data.response.code === 401 || data.response.code === 403)) {
-          showError("wrongCredentials");
-        } else {
-          showError("playbackError");
-          console.error("hls.js fatal error", data);
-        }
-        hls.destroy();
-        hls = null;
-        viewScreen.hidden = true;
-        loginScreen.hidden = false;
-        loginForm.querySelector("button").disabled = false;
+      if (!data.fatal) return;
+
+      if (data.response && (data.response.code === 401 || data.response.code === 403)) {
+        giveUp("wrongCredentials");
+        return;
       }
+      if (hlsRecoveryCount >= MAX_AUTO_RECOVERIES) {
+        giveUp("playbackError", data);
+        return;
+      }
+
+      // hls.js's own recommended recovery pattern: transient network blips
+      // (a dropped segment, a brief encoder stall) just need a restart, not
+      // a full return to the login screen.
+      hlsRecoveryCount += 1;
+      statusEl.textContent = t("connecting");
+      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+        hls.startLoad();
+      } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      } else {
+        giveUp("playbackError", data);
+      }
+    });
+
+    player.addEventListener("playing", () => {
+      hlsRecoveryCount = 0; // played successfully, reset the budget
     });
 
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
