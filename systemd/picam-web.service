@@ -1,25 +1,32 @@
 [Unit]
 Description=pi-cam web backend (static viewer + push-to-talk websocket)
-After=network-online.target sound.target
-Wants=network-online.target
+After=network-online.target sound.target user@1000.service
+Wants=network-online.target user@1000.service
 
 [Service]
 # Serves the static viewer and a /talk-ws websocket that decodes incoming
 # mic audio and plays it to the Bose speaker (see web/server.py). Loopback-
 # only; the only way in is Tailscale Funnel's local reverse proxy (see
 # scripts/tailscale-funnel.sh). scripts/firewall.sh also drops any external
-# packets to this port as defense in depth. Needs the "audio" group
-# (inherited from the picam user) to spawn ffmpeg against the ALSA device.
+# packets to this port as defense in depth.
+#
+# Runs as the interactive login user (not the dedicated `picam` user
+# everything else uses), same reasoning as picam-keepalive.service: the
+# push-to-talk audio it spawns has to reach into /run/user/1000, which is
+# only traversable by that user regardless of the socket's own permissions.
+# This does mean the web backend runs with more privilege than the rest of
+# the stack — see docs/THREAT_MODEL.md. Adjust UID 1000 if yours differs.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 WorkingDirectory=/etc/picam/web
 ExecStart=/usr/bin/python3 /etc/picam/web/server.py
 Restart=always
 RestartSec=3
-User=picam
-Group=picam
+User=hws
+Group=hws
 
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=yes
 PrivateTmp=yes
 
 [Install]

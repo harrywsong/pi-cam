@@ -27,7 +27,13 @@ from aiohttp import web
 
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 MEDIAMTX_CONF = "/etc/picam/mediamtx.yml"
-SPEAKER_DEVICE = "picam_speaker"
+# Playback is routed through PipeWire's PulseAudio-compatible socket
+# (ffmpeg's `-f pulse` output), not raw ALSA: PipeWire/WirePlumber already
+# claims the USB speaker exclusively on Raspberry Pi OS, so a second
+# process can't open it directly — PipeWire's job is exactly this kind of
+# concurrent mixing (push-to-talk audio alongside the keep-alive tone). See
+# systemd/picam-web.service for the PULSE_SERVER/XDG_RUNTIME_DIR env this
+# process needs (inherited by the ffmpeg subprocess below automatically).
 TOKEN_TTL_SECONDS = 30
 
 _tokens = {}  # token -> expiry epoch seconds
@@ -112,8 +118,8 @@ async def talk_ws(request):
         "-ar",
         "48000",
         "-f",
-        "alsa",
-        SPEAKER_DEVICE,
+        "pulse",
+        "default",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,

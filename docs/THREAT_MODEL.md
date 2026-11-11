@@ -71,6 +71,18 @@ feed.** Read this whole page before deploying.
   beyond the same credential check as everything else.** Anyone with valid
   credentials can speak into the room at will. This is the same trust
   level as the existing listen-in audio, just in the other direction.
+- **`picam-web` and `picam-keepalive` run as your interactive login user,
+  not the isolated `picam` system account everything else uses.** This is
+  a real, deliberate trade-off, not an oversight: on Raspberry Pi OS,
+  PipeWire/WirePlumber (which owns the USB speaker) runs per logged-in
+  user, so reaching it at all means running as that user. In practice this
+  means the one component with a public-reachable websocket endpoint
+  (`server.py`) has as much system privilege as your own account, where
+  the rest of the stack (MediaMTX, ffmpeg capture) is confined to a
+  no-login, no-home-directory service account. If this matters more to
+  you than push-to-talk does, the mitigation is to not install
+  `picam-keepalive`/push-to-talk and keep `picam-web` serving plain static
+  files as the unprivileged `picam` user, same as before this feature.
 - **The `publisher` password is visible locally via `ps`/`/proc`.** ffmpeg's
   RTSP output embeds it in the URL it's invoked with (`rtsp://publisher:
   PASS@127.0.0.1:8554/home`), which is unavoidable with ffmpeg's RTSP client

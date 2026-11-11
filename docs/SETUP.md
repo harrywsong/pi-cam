@@ -81,39 +81,29 @@ see step 3c.
 
 ## 3c. Set up push-to-talk (optional — needs a USB speaker)
 
-If you've got a USB speaker plugged in, find its ALSA card name:
+If your Pi runs the default Raspberry Pi OS desktop, PipeWire/WirePlumber
+(under your own login user) already claims any USB speaker exclusively —
+confirm yours shows up:
 
 ```bash
-aplay -l
+pactl list sinks short
 ```
 
-Create `/etc/asound.conf` with a `dmix` device wrapping it (substitute your
-card's name — this example uses a Bose Revolve SoundLink), so the
-always-on keep-alive tone and push-to-talk audio can share the device
-instead of fighting for exclusive access:
+Two things make the speaker reachable from `picam-web`/`picam-keepalive`
+(both of which run as your login user for exactly this reason — see
+`docs/THREAT_MODEL.md` for the trade-off):
 
 ```bash
-sudo tee /etc/asound.conf > /dev/null <<'EOF'
-pcm.picam_speaker {
-    type dmix
-    ipc_key 1027
-    ipc_perm 0666
-    slave {
-        pcm "hw:CARD=SoundLink,DEV=0"
-        rate 48000
-        channels 2
-        period_size 1024
-        buffer_size 4096
-    }
-}
-ctl.picam_speaker {
-    type hw
-    card "SoundLink"
-}
-EOF
+sudo loginctl enable-linger "$USER"   # keeps your PipeWire session (and the keep-alive tone) alive even logged out
+sudo usermod -aG picam "$USER"        # lets your user read /etc/picam (mediamtx.yml, web/) which is otherwise picam-only
 ```
 
-Test it: `ffmpeg -f lavfi -i sine=frequency=440 -ac 2 -t 2 -f alsa picam_speaker`
+`systemd/picam-web.service` and `systemd/picam-keepalive.service` both
+assume UID 1000 (`/run/user/1000/pulse/native`) and `User=hws` — edit both
+files to match your actual username/UID (`id "$USER"`) before installing
+them if they differ.
+
+Test playback: `ffmpeg -f lavfi -i sine=frequency=440 -ac 2 -t 2 -f pulse default`
 should play a short beep. Then enable the keep-alive tone (battery-powered
 portable speakers auto-power-off after a few minutes of silence otherwise —
 this plays a continuous, near-inaudible 19Hz tone to prevent that):

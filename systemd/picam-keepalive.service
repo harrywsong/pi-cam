@@ -1,24 +1,37 @@
 [Unit]
 Description=pi-cam speaker keep-alive tone (prevents Bose auto-power-off)
-After=sound.target
+After=sound.target user@1000.service
+Wants=user@1000.service
 
 [Service]
 # Portable/battery speakers (Bose Revolve etc.) auto-power-off after a few
 # minutes of silence. A continuous, very quiet, sub-audible tone keeps the
-# USB audio link "active" without being noticeable. Runs through the
-# "picam_speaker" dmix device (see /etc/asound.conf) so push-to-talk audio
-# can play at the same time instead of fighting for exclusive device access.
+# USB audio link "active" without being noticeable.
+#
+# Goes through PipeWire's PulseAudio-compatible socket (ffmpeg's `-f pulse`
+# output), not raw ALSA: on Raspberry Pi OS, PipeWire/WirePlumber (running
+# under the Pi's own login user) already claims the USB speaker exclusively,
+# so a second process can't open it directly via ALSA — PipeWire's job is
+# exactly this kind of concurrent mixing (this tone + push-to-talk audio
+# playing at once), so route through it instead of fighting it.
+#
+# This runs as the interactive login user (not the dedicated `picam` user
+# everything else uses) because that's whose PipeWire session owns the
+# socket — adjust UID 1000/PULSE_SERVER path below if yours differs
+# (`id <your-user>`), and run `sudo loginctl enable-linger <your-user>` so
+# that session (and PipeWire with it) stays up even with nobody logged in.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 ExecStart=/usr/bin/ffmpeg -hide_banner -loglevel warning \
   -f lavfi -i sine=frequency=19:sample_rate=48000 \
-  -af volume=0.02 -ac 2 -f alsa picam_speaker
+  -af volume=0.02 -ac 2 -f pulse keepalive
 Restart=always
 RestartSec=3
-User=picam
+User=hws
 Group=audio
 
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=yes
 PrivateTmp=yes
 
 [Install]
