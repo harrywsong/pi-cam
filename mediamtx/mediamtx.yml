@@ -36,7 +36,7 @@ hls: yes             # primary viewer path, proxied out via Tailscale Funnel
 hlsVariant: lowLatency  # LL-HLS (fMP4 + partial segments) for ~1-2s latency
 hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
-hlsSegmentCount: 3
+hlsSegmentCount: 7  # MediaMTX's minimum for lowLatency; playlist window is longer, but the live edge (what players join at) stays close to real-time
 webrtc: no           # disabled: not reachable through Funnel without a TURN relay (see note above)
 api: no              # leave off unless you need the HTTP control API
 metrics: no
